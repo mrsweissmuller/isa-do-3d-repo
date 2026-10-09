@@ -1,0 +1,9 @@
+{
+  "name": "com.isado3d.tools",
+  "version": "1.0.0",
+  "displayName": "Isa do 3D",
+  "unity": "2021.3",
+  "author": {
+    "name": "Isa"
+  }
+}
