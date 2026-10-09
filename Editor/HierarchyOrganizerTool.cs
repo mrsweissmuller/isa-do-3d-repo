@@ -631,8 +631,7 @@ namespace IsaDo3D.EnvironmentArt
 
             if (go == null || !go.name.StartsWith(HierarchyOrganizerTool.HeaderPrefix))
             {
-                if (!row.ClassListContains(HeaderClass)) return;
-
+                // Reseta sempre, o Name e o botão podem herdar o estilo de cabeçalho mesmo sem a classe no row
                 row.RemoveFromClassList(HeaderClass);
                 row.style.backgroundColor = UIE.StyleKeyword.Null;
                 SetFrozenCellsTransparent(row, false);
