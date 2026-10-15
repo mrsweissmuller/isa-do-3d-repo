@@ -1,0 +1,18 @@
+Library/
+Temp/
+Logs/
+UserSettings/
+ProjectSettings/
+Assets/
+obj/
+bin/
+*.csproj
+*.sln
+.vs/
+.idea/
+
+# bytecode que o Blender gera ao carregar os add-ons, e os .meta que a Unity cria em cima dele
+__pycache__/
+__pycache__.meta
+*.pyc
+*.pyc.meta
