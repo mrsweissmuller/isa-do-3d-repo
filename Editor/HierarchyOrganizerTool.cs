@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -176,8 +177,9 @@ namespace IsaDo3D.EnvironmentArt
                 {
                     EditorGUILayout.LabelField("Renomear em lote", IsaDo3DStyles.Title);
                     EditorGUILayout.LabelField(
-                        "Limpa os sufixos \"(n)\" que a Unity cria ao duplicar e renumera os objetos selecionados. " +
-                        "Números que fazem parte do nome do asset (exemplo: Isa_Suja_02) são preservados.",
+                        "Limpa os sufixos que a Unity cria ao duplicar e renumera os objetos selecionados. " +
+                        "Instância de prefab usa o nome do prefab como base, então o _01 do asset é preservado " +
+                        "(exemplo: PF_Wall_4x4_01_01, PF_Wall_4x4_01_02).",
                         EditorStyles.wordWrappedMiniLabel);
                     EditorGUILayout.Space(4);
 
@@ -420,6 +422,27 @@ namespace IsaDo3D.EnvironmentArt
             return string.IsNullOrEmpty(baseName) ? name.Trim() : baseName;
         }
 
+        // Tira qualquer contador do fim, nos três esquemas de duplicata da Unity
+        private static string Stem(string name)
+        {
+            var stem = Regex.Replace(name.Trim(), @"(?:\s*\(\d+\)|[._][0-9]+)+$", "");
+            return string.IsNullOrEmpty(stem) ? name.Trim() : stem;
+        }
+
+        // No esquema Prefab_1 a Unity troca o _01 do asset pelo contador, só o prefab de origem sabe o nome certo
+        private static string BaseNameOf(GameObject go)
+        {
+            var fallback = BaseName(go.name);
+            if (!PrefabUtility.IsAnyPrefabInstanceRoot(go)) return fallback;
+
+            var assetPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(go);
+            if (string.IsNullOrEmpty(assetPath)) return fallback;
+
+            // Nome trocado de propósito não volta pro nome do prefab
+            var prefabName = Path.GetFileNameWithoutExtension(assetPath);
+            return Stem(go.name) == Stem(prefabName) ? prefabName : fallback;
+        }
+
         private static void NormalizeSelectedNames()
         {
             var selection = SelectedSceneObjects()
@@ -431,7 +454,7 @@ namespace IsaDo3D.EnvironmentArt
             Undo.SetCurrentGroupName("Normalizar Nomes");
             int undoGroup = Undo.GetCurrentGroup();
 
-            var groups = selection.GroupBy(go => BaseName(go.name)).ToList();
+            var groups = selection.GroupBy(BaseNameOf).ToList();
 
             // Sem isso "Rock" + "Rock (1)" viram Rock_01 e batem com um Rock_01 que já existia
             var selected = new HashSet<GameObject>(selection);
