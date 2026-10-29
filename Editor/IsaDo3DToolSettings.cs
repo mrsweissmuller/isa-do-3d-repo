@@ -82,6 +82,20 @@ namespace IsaDo3D.EnvironmentArt
             },
             new ToolEntry
             {
+                Id = ToolIds.TextureMaterial,
+                Title = "Criar Material da Textura",
+                Summary = "Textura T_ nova numa pasta Textures ganha o M_ na pasta Materials ao lado, copiando um " +
+                          "material da mesma família (M_Floor_*...). Textura antiga: clique direito nela.",
+            },
+            new ToolEntry
+            {
+                Id = ToolIds.NamingFixer,
+                Title = "Corrigir Nomenclatura",
+                Summary = "Renomeia os assets selecionados com o prefixo do tipo: T_, M_, SM_ e PF_. " +
+                          "Clique direito no Project.",
+            },
+            new ToolEntry
+            {
                 Title = "Software 3D",
                 Summary = "Pra onde vai a mesh quando eu mando ela pra fora.",
                 Options = new[]

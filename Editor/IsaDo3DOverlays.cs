@@ -14,6 +14,7 @@ namespace IsaDo3D.EnvironmentArt
             OpenInMayaButton.Id,
             OpenInKritaButton.Id,
             PivotToolButton.Id,
+            MaterialBatchButton.Id,
             HierarchyOrganizerButton.Id)
         {
         }
@@ -105,6 +106,15 @@ namespace IsaDo3D.EnvironmentArt
 
         public PivotToolButton() : base(ToolIds.ObjectEditor, "O.E.",
             "Abrir o Object Editor", PrefabPivotTool.Open) { }
+    }
+
+    [EditorToolbarElement(Id, typeof(SceneView))]
+    internal class MaterialBatchButton : ToolButton
+    {
+        public const string Id = "IsaDo3D/MaterialBatchButton";
+
+        public MaterialBatchButton() : base(ToolIds.MaterialBatch, "M.B.",
+            "Abrir o Material Batch (aplicar um material nos objetos selecionados)", MaterialBatchTool.Open) { }
     }
 
     [EditorToolbarElement(Id, typeof(SceneView))]
