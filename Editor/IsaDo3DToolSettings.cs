@@ -115,9 +115,7 @@ namespace IsaDo3D.EnvironmentArt
             new ToolEntry
             {
                 Id = ToolIds.Krita,
-                Title = "Krita",
-                Summary = "Abre a textura selecionada no Krita e reimporta sozinho " +
-                          "quando ela for salva lá. Acesso: Isa do 3D/Krita ou clique direito na textura.",
+                Title = "Abrir textura no Krita",
             },
             new ToolEntry
             {
