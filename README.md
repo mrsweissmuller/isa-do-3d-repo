@@ -9,8 +9,6 @@ Cada um liga o que quiser em `Isa do 3D/Ferramentas...`. Fica salvo em `UserSett
 | Copiar Componentes  | Copia os componentes de um prefab pros objetos selecionados                     |
 | Hierarchy Organizer | Grupos na Hierarchy (janela e botão na barra)                                   |
 | ↳ Cabeçalhos        | Cabeçalhos coloridos na Hierarchy e botão `≡` pra selecionar e fechar o grupo   |
-| LOD Group Builder   | Monta o LODGroup a partir da cadeia `_LOD0/1/2`                                 |
-| Missing Scripts     | Acha e remove script ausente na cena                                            |
 | Material da Textura | Clique direito na textura `T_` cria o `M_` na pasta Materials ao lado           |
 | Nomenclatura        | Corrige o prefixo dos assets selecionados: `T_`, `M_`, `SM_`, `PF_`             |
 | Software 3D         | ⇄ Abrir no Blender (com Batex e Krita Bridge) e/ou no Maya                      |

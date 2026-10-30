@@ -14,8 +14,6 @@ namespace IsaDo3D.EnvironmentArt
         public const string ComponentCopy = "COMPONENT_COPY";
         public const string HierarchyOrganizer = "HIERARCHY_ORGANIZER";
         public const string HierarchyHeaders = "HIERARCHY_HEADERS";
-        public const string LodBuilder = "LOD_BUILDER";
-        public const string MissingScripts = "MISSING_SCRIPTS";
         public const string TextureMaterial = "TEXTURE_MATERIAL";
         public const string NamingFixer = "NAMING_FIXER";
         public const string Blender = "BLENDER";
@@ -26,7 +24,7 @@ namespace IsaDo3D.EnvironmentArt
         public static readonly string[] All =
         {
             ObjectEditor, MaterialBatch, ComponentCopy, HierarchyOrganizer, HierarchyHeaders,
-            LodBuilder, MissingScripts, TextureMaterial, NamingFixer, Blender, Maya, Krita, Overlay,
+            TextureMaterial, NamingFixer, Blender, Maya, Krita, Overlay,
         };
     }
 

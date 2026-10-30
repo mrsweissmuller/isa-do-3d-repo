@@ -69,30 +69,13 @@ namespace IsaDo3D.EnvironmentArt
             },
             new ToolEntry
             {
-                Id = ToolIds.LodBuilder,
-                Title = "LOD Group Builder",
-                Summary = "Monta o LODGroup a partir da hierarquia {base} > {base}_LOD0/1/2 que o Auto LOD do " +
-                          "Blender exporta.",
-            },
-            new ToolEntry
-            {
-                Id = ToolIds.MissingScripts,
-                Title = "Missing Scripts",
-                Summary = "Acha e remove componentes de script ausente na cena aberta. Menu: Isa do 3D/QA.",
-            },
-            new ToolEntry
-            {
                 Id = ToolIds.TextureMaterial,
                 Title = "Criar Material da Textura",
-                Summary = "Clique direito numa textura T_ de uma pasta Textures cria o M_ na pasta Materials ao lado, " +
-                          "copiando um material da mesma família (M_Floor_*...).",
             },
             new ToolEntry
             {
                 Id = ToolIds.NamingFixer,
                 Title = "Corrigir Nomenclatura",
-                Summary = "Renomeia os assets selecionados com o prefixo do tipo: T_, M_, SM_ e PF_. " +
-                          "Clique direito no Project.",
             },
             new ToolEntry
             {
@@ -229,7 +212,7 @@ namespace IsaDo3D.EnvironmentArt
                         _changed = true;
                     }
 
-                    EditorGUILayout.LabelField(tool.Summary, EditorStyles.wordWrappedMiniLabel);
+                    if (tool.Summary != null) EditorGUILayout.LabelField(tool.Summary, EditorStyles.wordWrappedMiniLabel);
                 }
             }
         }
