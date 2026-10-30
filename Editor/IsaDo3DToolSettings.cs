@@ -84,8 +84,8 @@ namespace IsaDo3D.EnvironmentArt
             {
                 Id = ToolIds.TextureMaterial,
                 Title = "Criar Material da Textura",
-                Summary = "Textura T_ nova numa pasta Textures ganha o M_ na pasta Materials ao lado, copiando um " +
-                          "material da mesma família (M_Floor_*...). Textura antiga: clique direito nela.",
+                Summary = "Clique direito numa textura T_ de uma pasta Textures cria o M_ na pasta Materials ao lado, " +
+                          "copiando um material da mesma família (M_Floor_*...).",
             },
             new ToolEntry
             {

@@ -6,7 +6,8 @@ using UnityEngine;
 
 namespace IsaDo3D.EnvironmentArt
 {
-    // Textura T_, material M_, FBX com mesh SM_, prefab PF_. RenameAsset mantém o GUID, nenhuma referência quebra.
+    // Textura T_, material M_, FBX com mesh SM_ (skinned SK_), prefab PF_. RenameAsset mantém o GUID, nenhuma
+    // referência por GUID quebra; o nome do objeto raiz (prefab, modelo) muda junto, então busca por nome quebra.
     public static class NamingConventionFixer
     {
         private static readonly string[] KnownPrefixes = { "T_", "M_", "SM_", "SK_", "PF_" };
@@ -28,6 +29,11 @@ namespace IsaDo3D.EnvironmentArt
             {
                 var path = AssetDatabase.GUIDToAssetPath(guid);
                 if (AssetDatabase.IsValidFolder(path)) continue;
+                if (!ProjectAssets.IsOurs(path))
+                {
+                    Debug.LogWarning($"[Isa do 3D] {path} é de terceiros, não mexo no nome.");
+                    continue;
+                }
                 var name = Path.GetFileNameWithoutExtension(path);
                 var target = FixedName(path, name);
                 if (target == null || target == name) continue;
@@ -68,7 +74,10 @@ namespace IsaDo3D.EnvironmentArt
             if (AssetImporter.GetAtPath(path) is ModelImporter)
             {
                 if (ModelKeepPrefixes.Any(p => name.StartsWith(p))) return null;
-                return AssetDatabase.LoadAllAssetsAtPath(path).Any(a => a is Mesh) ? "SM_" : null;
+                var model = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                if (model == null) return null;
+                if (model.GetComponentInChildren<SkinnedMeshRenderer>(true) != null) return "SK_";
+                return model.GetComponentInChildren<MeshFilter>(true) != null ? "SM_" : null;
             }
             return null;
         }

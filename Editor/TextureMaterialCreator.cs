@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
@@ -6,12 +5,11 @@ using UnityEngine.Rendering;
 
 namespace IsaDo3D.EnvironmentArt
 {
-    // X/Textures/T_Nome(_D).png -> X/Materials/M_Nome.mat
-    public class TextureMaterialCreator : AssetPostprocessor
+    // X/Textures/T_Nome(_D).png -> X/Materials/M_Nome.mat, só pelo clique direito
+    public static class TextureMaterialCreator
     {
         // Mapa que não é cor não ganha material próprio
         private static readonly string[] NonColorSuffixes = { "_N", "_Normal", "_M", "_Mask", "_R", "_AO", "_H", "_E", "_ORM", "_MRA" };
-        private static readonly HashSet<string> Pending = new HashSet<string>();
 
         [MenuItem("Isa do 3D/Assets/Criar Material da Textura", true)]
         [MenuItem("Assets/Criar Material da Textura", true)]
@@ -31,30 +29,9 @@ namespace IsaDo3D.EnvironmentArt
             AssetDatabase.SaveAssets();
         }
 
-        // Só a primeira importação (sem .meta), senão reimportar ou refazer a Library cria material pra textura antiga
-        private void OnPreprocessTexture()
-        {
-            if (!IsaDo3DToolState.IsOn(ToolIds.TextureMaterial)) return;
-            if (!assetImporter.importSettingsMissing || !IsColorTexture(assetPath)) return;
-            if (File.Exists(MaterialPathFor(assetPath)) || !Pending.Add(assetPath)) return;
-
-            // Dentro do callback de importação não dá pra criar asset
-            EditorApplication.delayCall -= Flush;
-            EditorApplication.delayCall += Flush;
-        }
-
-        private static void Flush()
-        {
-            if (Pending.Count == 0) return;
-            var paths = new List<string>(Pending);
-            Pending.Clear();
-            foreach (var path in paths) Create(path);
-            AssetDatabase.SaveAssets();
-        }
-
         private static bool IsColorTexture(string path)
         {
-            if (!path.StartsWith("Assets/") || !path.Contains("/Textures/")) return false;
+            if (!ProjectAssets.IsOurs(path) || TexturesFolderIndex(path.Split('/')) < 0) return false;
             var name = Path.GetFileNameWithoutExtension(path);
             if (!name.StartsWith("T_")) return false;
             foreach (var suffix in NonColorSuffixes)
@@ -62,18 +39,29 @@ namespace IsaDo3D.EnvironmentArt
             return true;
         }
 
+        // Índice da última pasta chamada exatamente Textures (Textures_Shared e afins não contam)
+        private static int TexturesFolderIndex(string[] parts)
+        {
+            for (int i = parts.Length - 2; i >= 0; --i)
+                if (parts[i] == "Textures") return i;
+            return -1;
+        }
+
+        // X/Textures/Sub/T_Nome_D.png -> X/Materials/Sub/M_Nome.mat
         private static string MaterialPathFor(string texturePath)
         {
             var name = Path.GetFileNameWithoutExtension(texturePath).Substring(2);
             if (name.EndsWith("_D")) name = name.Substring(0, name.Length - 2);
-            var dir = Path.GetDirectoryName(texturePath).Replace('\\', '/').Replace("/Textures", "/Materials");
-            return $"{dir}/M_{name}.mat";
+            var parts = texturePath.Split('/');
+            parts[TexturesFolderIndex(parts)] = "Materials";
+            parts[parts.Length - 1] = $"M_{name}.mat";
+            return string.Join("/", parts);
         }
 
         private static void Create(string texturePath)
         {
             var materialPath = MaterialPathFor(texturePath);
-            if (File.Exists(materialPath)) return;
+            if (AssetDatabase.LoadAssetAtPath<Material>(materialPath) != null) return;
             var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(texturePath);
             if (texture == null) return;
 
@@ -93,9 +81,7 @@ namespace IsaDo3D.EnvironmentArt
                 if (old != null && material.GetTexture(property) == old) material.SetTexture(property, texture);
             material.mainTexture = texture;
 
-            var dir = Path.GetDirectoryName(materialPath).Replace('\\', '/');
-            if (!AssetDatabase.IsValidFolder(dir))
-                AssetDatabase.CreateFolder(Path.GetDirectoryName(dir).Replace('\\', '/'), Path.GetFileName(dir));
+            ProjectAssets.EnsureFolder(Path.GetDirectoryName(materialPath).Replace('\\', '/'));
             AssetDatabase.CreateAsset(material, materialPath);
             Debug.Log($"[Isa do 3D] {materialPath} criado a partir de {(template != null ? template.name : shader.name)}.", material);
         }
@@ -106,22 +92,29 @@ namespace IsaDo3D.EnvironmentArt
             return pipeline != null && pipeline.defaultMaterial != null ? pipeline.defaultMaterial.shader : Shader.Find("Standard");
         }
 
-        // M_Floor_Wood_01 -> qualquer M_Floor_* da mesma pasta
+        // M_Floor_Wood_01 -> o M_Floor_* da mesma pasta com mais partes do nome em comum (M_Floor_Wood_Plank antes
+        // de M_Floor_Tile), empate por ordem de nome, pra sair sempre o mesmo
         private static Material TemplateFor(string materialPath)
         {
             var dir = Path.GetDirectoryName(materialPath).Replace('\\', '/');
             if (!AssetDatabase.IsValidFolder(dir)) return null;
             var parts = Path.GetFileNameWithoutExtension(materialPath).Split('_');
             if (parts.Length < 2) return null;
-            var family = parts[0] + "_" + parts[1] + "_";
 
+            string best = null; int bestScore = 1;
             foreach (var guid in AssetDatabase.FindAssets("t:Material", new[] { dir }))
             {
                 var path = AssetDatabase.GUIDToAssetPath(guid);
                 if (Path.GetDirectoryName(path).Replace('\\', '/') != dir) continue;
-                if (Path.GetFileName(path).StartsWith(family)) return AssetDatabase.LoadAssetAtPath<Material>(path);
+                var other = Path.GetFileNameWithoutExtension(path).Split('_');
+                int score = 0;
+                while (score < parts.Length && score < other.Length && parts[score] == other[score]) ++score;
+                if (score > bestScore || (score == bestScore && best != null && string.CompareOrdinal(path, best) < 0))
+                {
+                    best = path; bestScore = score;
+                }
             }
-            return null;
+            return best == null ? null : AssetDatabase.LoadAssetAtPath<Material>(best);
         }
     }
 }
