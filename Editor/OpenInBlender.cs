@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
@@ -240,9 +242,193 @@ namespace IsaDo3D.EnvironmentArt
                 : "import bpy\n" +
                   "for obj in list(bpy.data.objects):\n" +
                   "    bpy.data.objects.remove(obj, do_unlink=True)\n" +
-                  $"{importCall}\n";
+                  $"{importCall}\n" +
+                  TextureScript(absoluteMeshPath);
 
             return TempScriptFile.Write("open_in_blender", ".py", script);
+        }
+
+        // Quem sabe qual textura o modelo usa é a Unity: o importer guarda o material de cada slot do FBX,
+        // e o material aponta pra textura. O Blender só recebe nome do material -> arquivo da textura.
+        private const string TextureScriptTemplate = @"
+import os
+import re
+TEXTURES = {__TEXTURES__}
+ASSETS_ROOT = __ASSETS_ROOT__
+IMAGE_EXTS = ('.png', '.jpg', '.jpeg', '.tga', '.bmp', '.tif', '.tiff', '.exr', '.hdr')
+_index = None
+
+def _find_texture(name):
+    base = re.sub(r'\.\d{3}$', '', name)
+    return TEXTURES.get(name) or TEXTURES.get(base)
+
+def _apply_textures():
+    applied = 0
+    for mat in bpy.data.materials:
+        path = _find_texture(mat.name)
+        if not path:
+            continue
+        mat.use_nodes = True
+        tree = mat.node_tree
+        bsdf = next((n for n in tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
+        if bsdf is None:
+            continue
+        base_color = bsdf.inputs['Base Color']
+        # O FBX costuma trazer o caminho da textura na maquina de quem exportou: o no existe, a imagem nao
+        existing = base_color.links[0].from_node if base_color.is_linked else None
+        if existing is not None and existing.type != 'TEX_IMAGE':
+            continue
+        try:
+            image = bpy.data.images.load(path, check_existing=True)
+        except RuntimeError as e:
+            print('[IsaDo3D] Nao consegui carregar a textura ' + path + ': ' + str(e))
+            continue
+        if existing is not None:
+            existing.image = image
+        else:
+            node = tree.nodes.new('ShaderNodeTexImage')
+            node.image = image
+            node.location = (bsdf.location.x - 400, bsdf.location.y)
+            tree.links.new(node.outputs['Color'], base_color)
+        applied += 1
+        print('[IsaDo3D] Textura aplicada em ' + mat.name + ': ' + path)
+    return applied
+
+def _show_textured_viewport():
+    wm = bpy.context.window_manager
+    if wm is None:
+        return
+    for window in wm.windows:
+        for area in window.screen.areas:
+            if area.type != 'VIEW_3D':
+                continue
+            for space in area.spaces:
+                if space.type == 'VIEW_3D':
+                    space.shading.type = 'MATERIAL'
+
+def _texture_index():
+    global _index
+    if _index is None:
+        _index = {}
+        for folder, _, files in os.walk(ASSETS_ROOT):
+            for f in files:
+                stem, ext = os.path.splitext(f)
+                if ext.lower() in IMAGE_EXTS:
+                    _index.setdefault(stem.lower(), []).append(os.path.join(folder, f))
+    return _index
+
+# Textura que o FBX aponta mas nao existe aqui (caminho da maquina de quem exportou): procura pelo nome em Assets
+def _relink_missing_images():
+    fixed = 0
+    for image in bpy.data.images:
+        if image.source != 'FILE' or image.packed_file or not image.filepath or image.users == 0:
+            continue
+        if os.path.exists(bpy.path.abspath(image.filepath)):
+            continue
+        stem = os.path.splitext(os.path.basename(image.filepath.replace('\\', '/')))[0].lower()
+        found = _texture_index().get(stem)
+        if not found:
+            continue
+        found.sort(key=lambda p: (not p.lower().endswith('.png'), p))
+        image.filepath = found[0].replace('\\', '/')
+        image.reload()
+        fixed += 1
+        print('[IsaDo3D] Textura reencontrada pelo nome: ' + found[0])
+    return fixed
+
+def _has_texture():
+    for mat in bpy.data.materials:
+        if not mat.use_nodes:
+            continue
+        for node in mat.node_tree.nodes:
+            if node.type == 'TEX_IMAGE' and node.image and node.image.size[0] > 0:
+                return True
+    return False
+
+_apply_textures()
+_relink_missing_images()
+if _has_texture():
+    try:
+        _show_textured_viewport()
+    except Exception as e:
+        print('[IsaDo3D] Nao consegui trocar o viewport pra Material Preview: ' + str(e))
+";
+
+        private static string TextureScript(string absoluteMeshPath)
+        {
+            var textures = ResolveMaterialTextures(absoluteMeshPath);
+            var entries = string.Join(", ", textures.Select(t => $"{PythonString(t.Key)}: {PythonString(t.Value)}"));
+            var assetsRoot = Application.dataPath.Replace('\\', '/');
+            return TextureScriptTemplate
+                .Replace("__TEXTURES__", entries)
+                .Replace("__ASSETS_ROOT__", PythonString(assetsRoot));
+        }
+
+        private static readonly string[] BlenderImageExtensions =
+            { ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".tif", ".tiff", ".exr", ".hdr" };
+
+        // Nome do material no FBX -> caminho absoluto da textura, só dos que têm uma imagem que o Blender lê
+        private static Dictionary<string, string> ResolveMaterialTextures(string absoluteMeshPath)
+        {
+            var result = new Dictionary<string, string>();
+
+            var projectRoot = Path.GetDirectoryName(Application.dataPath).Replace('\\', '/') + "/";
+            if (!absoluteMeshPath.StartsWith(projectRoot, StringComparison.OrdinalIgnoreCase)) return result;
+            var assetPath = absoluteMeshPath.Substring(projectRoot.Length);
+
+            var materials = new Dictionary<string, Material>();
+            if (AssetImporter.GetAtPath(assetPath) is ModelImporter importer)
+            {
+                foreach (var entry in importer.GetExternalObjectMap())
+                    if (entry.Key.type == typeof(Material) && entry.Value is Material remapped)
+                        materials[entry.Key.name] = remapped;
+            }
+
+            // Material embutido no FBX, sem remap pro projeto
+            foreach (var embedded in AssetDatabase.LoadAllAssetsAtPath(assetPath).OfType<Material>())
+                if (!materials.ContainsKey(embedded.name)) materials[embedded.name] = embedded;
+
+            foreach (var entry in materials)
+            {
+                var texturePath = FindMainTexturePath(entry.Value);
+                if (texturePath == null) continue;
+
+                var ext = Path.GetExtension(texturePath).ToLowerInvariant();
+                var absoluteTexture = AssetPaths.Absolute(texturePath);
+                if (!BlenderImageExtensions.Contains(ext) || !File.Exists(absoluteTexture))
+                {
+                    Debug.LogWarning($"[Blender] Textura '{texturePath}' do material '{entry.Value.name}' não pode ser aberta no Blender (formato ou arquivo).");
+                    continue;
+                }
+                result[entry.Key] = absoluteTexture;
+            }
+
+            return result;
+        }
+
+        private static string FindMainTexturePath(Material material)
+        {
+            if (material == null) return null;
+
+            foreach (var property in new[] { "_BaseMap", "_MainTex", "_BaseColorMap", "_Albedo" })
+            {
+                if (!material.HasProperty(property)) continue;
+                var path = AssetDatabase.GetAssetPath(material.GetTexture(property));
+                if (!string.IsNullOrEmpty(path)) return path;
+            }
+
+            // Shader customizado com outro nome de propriedade: a primeira textura que o material tiver
+            foreach (var property in material.GetTexturePropertyNames())
+            {
+                var path = AssetDatabase.GetAssetPath(material.GetTexture(property));
+                if (!string.IsNullOrEmpty(path)) return path;
+            }
+            return null;
+        }
+
+        private static string PythonString(string value)
+        {
+            return "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
         }
     }
 }
