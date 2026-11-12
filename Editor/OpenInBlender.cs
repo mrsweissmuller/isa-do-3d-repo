@@ -294,17 +294,44 @@ def _apply_textures():
         print('[IsaDo3D] Textura aplicada em ' + mat.name + ': ' + path)
     return applied
 
-def _show_textured_viewport():
+def _view3d_spaces():
     wm = bpy.context.window_manager
-    if wm is None:
-        return
-    for window in wm.windows:
-        for area in window.screen.areas:
-            if area.type != 'VIEW_3D':
-                continue
-            for space in area.spaces:
-                if space.type == 'VIEW_3D':
-                    space.shading.type = 'MATERIAL'
+    screens = [w.screen for w in wm.windows] if wm else []
+    for screen in screens:
+        for area in screen.areas:
+            if area.type == 'VIEW_3D':
+                for space in area.spaces:
+                    if space.type == 'VIEW_3D':
+                        yield space
+
+# Padrao do viewport: Solid, luz Flat, cor por Texture, contorno ligado e o resto desligado
+def _apply_viewport_shading():
+    for space in _view3d_spaces():
+        shading = space.shading
+        shading.type = 'SOLID'
+        shading.light = 'FLAT'
+        shading.color_type = 'TEXTURE'
+        shading.wireframe_color_type = 'THEME'
+        shading.background_type = 'THEME'
+        shading.show_object_outline = True
+        shading.object_outline_color = (0.0, 0.0, 0.0)
+        shading.show_xray = False
+        shading.show_shadows = False
+        shading.use_dof = False
+        shading.show_cavity = False
+        shading.show_backface_culling = False
+
+# Solid com cor Texture mostra o no de imagem ativo do material
+def _activate_base_color_images():
+    for mat in bpy.data.materials:
+        if not mat.use_nodes:
+            continue
+        bsdf = next((n for n in mat.node_tree.nodes if n.type == 'BSDF_PRINCIPLED'), None)
+        if bsdf is None or not bsdf.inputs['Base Color'].is_linked:
+            continue
+        source = bsdf.inputs['Base Color'].links[0].from_node
+        if source.type == 'TEX_IMAGE':
+            mat.node_tree.nodes.active = source
 
 def _texture_index():
     global _index
@@ -336,22 +363,13 @@ def _relink_missing_images():
         print('[IsaDo3D] Textura reencontrada pelo nome: ' + found[0])
     return fixed
 
-def _has_texture():
-    for mat in bpy.data.materials:
-        if not mat.use_nodes:
-            continue
-        for node in mat.node_tree.nodes:
-            if node.type == 'TEX_IMAGE' and node.image and node.image.size[0] > 0:
-                return True
-    return False
-
 _apply_textures()
 _relink_missing_images()
-if _has_texture():
-    try:
-        _show_textured_viewport()
-    except Exception as e:
-        print('[IsaDo3D] Nao consegui trocar o viewport pra Material Preview: ' + str(e))
+_activate_base_color_images()
+try:
+    _apply_viewport_shading()
+except Exception as e:
+    print('[IsaDo3D] Nao consegui ajustar o viewport: ' + str(e))
 ";
 
         private static string TextureScript(string absoluteMeshPath)
