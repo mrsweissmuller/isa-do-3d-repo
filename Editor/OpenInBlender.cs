@@ -243,9 +243,21 @@ namespace IsaDo3D.EnvironmentArt
                   "for obj in list(bpy.data.objects):\n" +
                   "    bpy.data.objects.remove(obj, do_unlink=True)\n" +
                   $"{importCall}\n" +
+                  ExportFolderScript(absoluteMeshPath) +
                   TextureScript(absoluteMeshPath);
 
             return TempScriptFile.Write("open_in_blender", ".py", script);
+        }
+
+        // O addon Isa do 3D exporta como <pasta>/<nome do objeto>.fbx: com a pasta do próprio FBX, exportar de volta
+        // sobrescreve o arquivo do projeto. Sem o addon habilitado a propriedade não existe e nada acontece.
+        private static string ExportFolderScript(string absoluteMeshPath)
+        {
+            var folder = Path.GetDirectoryName(absoluteMeshPath).Replace('\\', '/');
+            return "scene = bpy.context.scene\n" +
+                   "if hasattr(scene, 'isado3d_unity_export'):\n" +
+                   $"    scene.isado3d_unity_export.folder = {PythonString(folder)}\n" +
+                   $"    print('[IsaDo3D] Export folder: ' + {PythonString(folder)})\n";
         }
 
         // Quem sabe qual textura o modelo usa é a Unity: o importer guarda o material de cada slot do FBX,
