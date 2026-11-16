@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
@@ -61,10 +62,14 @@ namespace IsaDo3D.EnvironmentArt
                 return;
             }
 
+            // Com fonte .kra associado abre ele, a textura continua vigiada pra recarregar quando for exportada
+            var kritaSourcePath = FindKritaSource(absoluteTexturePath);
+            var fileToOpen = kritaSourcePath ?? absoluteTexturePath;
+
             var psi = new ProcessStartInfo
             {
                 FileName = kritaPath,
-                Arguments = $"\"{absoluteTexturePath}\"",
+                Arguments = $"\"{fileToOpen}\"",
                 UseShellExecute = false,
                 CreateNoWindow = true,
             };
@@ -79,8 +84,53 @@ namespace IsaDo3D.EnvironmentArt
                 return;
             }
 
-            Debug.Log($"[Krita] Abrindo '{sourceDescription}' ({absoluteTexturePath}) no Krita.");
+            Debug.Log(kritaSourcePath != null
+                ? $"[Krita] Abrindo o fonte de '{sourceDescription}' ({kritaSourcePath}) no Krita."
+                : $"[Krita] Abrindo '{sourceDescription}' ({absoluteTexturePath}) no Krita.");
             StartWatching(textureAssetPath, absoluteTexturePath);
+        }
+
+        // Escrito pelo plugin "Exportar para Unity" do Krita: { "map": { "<fonte .kra>": "<textura exportada>" } }
+        private const string KritaExportMapPath = "krita/pykrita/unity_export/unity_export.json";
+
+        private static readonly Regex JsonStringPair =
+            new Regex("\"((?:[^\"\\\\]|\\\\.)*)\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"");
+
+        private static string FindKritaSource(string absoluteTexturePath)
+        {
+            if (Path.GetExtension(absoluteTexturePath).ToLowerInvariant() == KritaSourceExtension) return null;
+
+            var mapPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), KritaExportMapPath);
+            if (!File.Exists(mapPath)) return null;
+
+            try
+            {
+                var wanted = ComparablePath(absoluteTexturePath);
+
+                foreach (Match pair in JsonStringPair.Matches(File.ReadAllText(mapPath)))
+                {
+                    var source = Regex.Unescape(pair.Groups[1].Value);
+                    if (Path.GetExtension(source).ToLowerInvariant() != KritaSourceExtension) continue;
+                    if (ComparablePath(Regex.Unescape(pair.Groups[2].Value)) != wanted) continue;
+                    if (!File.Exists(source)) continue;
+
+                    // O plugin guarda o caminho do fonte em minúsculas
+                    var onDisk = Directory.GetFiles(Path.GetDirectoryName(source), Path.GetFileName(source));
+                    return onDisk.Length > 0 ? onDisk[0] : source;
+                }
+            }
+            catch (Exception e) when (e is IOException || e is ArgumentException || e is UnauthorizedAccessException)
+            {
+                Debug.LogWarning($"[Krita] Não consegui ler o mapa de fontes em '{mapPath}': {e.Message}");
+            }
+
+            return null;
+        }
+
+        private static string ComparablePath(string path)
+        {
+            return Path.GetFullPath(path).Replace('\\', '/').ToLowerInvariant();
         }
 
         private static string GetOrPromptKritaPath()
