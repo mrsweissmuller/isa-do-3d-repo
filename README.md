@@ -9,8 +9,8 @@ Cada um liga o que quiser em `Isa do 3D/Ferramentas...`. Fica salvo em `UserSett
 | Copiar Componentes  | Copia os componentes de um prefab pros objetos selecionados                     |
 | Hierarchy Organizer | Grupos na Hierarchy (janela e botão na barra)                                   |
 | ↳ Cabeçalhos        | Cabeçalhos coloridos na Hierarchy e botão `≡` pra selecionar e fechar o grupo   |
-| Material da Textura | Clique direito na textura `T_` cria o `M_` na pasta Materials ao lado           |
-| Nomenclatura        | Corrige o prefixo dos assets selecionados: `T_`, `M_`, `SM_`, `PF_`             |
+| Material da Textura | Clique direito na textura `TEX_` cria o `MAT_` na pasta Materials ao lado       |
+| Nomenclatura        | Mostra e corrige o prefixo da seleção: `TEX_`, `MAT_`, `SM_`, `SK_`, `PF_`      |
 | Software 3D         | ⇄ Abrir no Blender (com Batex e Krita Bridge) e/ou no Maya                      |
 | Krita               | Abrir no Krita e recarregar ao salvar                                           |
 | Barra na Scene View | Atalhos na Scene View (só mostra os botões do que estiver ligado)               |
