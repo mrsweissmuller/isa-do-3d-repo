@@ -101,6 +101,10 @@ namespace IsaDo3D.EnvironmentArt
             new ToolEntry { Group = SceneGroup, Id = ToolIds.Overlay, Title = "Scene View toolbar" },
 
             new ToolEntry { Group = AssetsGroup, Id = ToolIds.TextureMaterial, Title = "Create Material from Texture" },
+            new ToolEntry
+            {
+                Group = AssetsGroup, Id = ToolIds.FolderColors, Title = "Folder colors and badges", Open = FolderColors.Open,
+            },
 
             new ToolEntry
             {

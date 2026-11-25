@@ -19,11 +19,12 @@ namespace IsaDo3D.EnvironmentArt
         // O valor é do tempo em que só abria o Krita, mudar desligaria a ferramenta de quem já tinha ligado
         public const string ImageEditor = "KRITA";
         public const string Overlay = "OVERLAY";
+        public const string FolderColors = "FOLDER_COLORS";
 
         public static readonly string[] All =
         {
             ObjectEditor, MaterialBatch, HierarchyOrganizer, HierarchyHeaders,
-            TextureMaterial, Blender, Maya, ImageEditor, Overlay,
+            TextureMaterial, Blender, Maya, ImageEditor, Overlay, FolderColors,
         };
     }
 
