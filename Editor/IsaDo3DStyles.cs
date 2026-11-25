@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -70,6 +71,40 @@ namespace IsaDo3D.EnvironmentArt
         public static void SetVisible(VisualElement element, bool visible)
         {
             element.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
+        }
+
+        private static Color Hovered(Color resting)
+        {
+            // Sem fundo (aba inativa, link) ganha um véu, com fundo clareia ou escurece um pouco
+            if (resting.a < 0.05f) return Dark ? new Color(1f, 1f, 1f, 0.08f) : new Color(0f, 0f, 0f, 0.08f);
+            return Dark ? Color.Lerp(resting, Color.white, 0.14f) : Color.Lerp(resting, Color.black, 0.10f);
+        }
+
+        // Estilo inline ganha do :hover da Unity, então o destaque do mouse é feito na mão
+        public static void HoverFeedback(VisualElement element)
+        {
+            Color resting = default;
+            Color hovered = default;
+            bool hovering = false;
+
+            element.RegisterCallback<PointerEnterEvent>(_ =>
+            {
+                if (!element.enabledInHierarchy) return;
+
+                resting = element.style.backgroundColor.value;
+                hovered = Hovered(resting);
+                element.style.backgroundColor = hovered;
+                hovering = true;
+            });
+
+            element.RegisterCallback<PointerLeaveEvent>(_ =>
+            {
+                if (!hovering) return;
+                hovering = false;
+
+                // Se a cor mudou no meio (aba que virou ativa no clique), quem mudou manda
+                if (element.style.backgroundColor.value == hovered) element.style.backgroundColor = resting;
+            });
         }
 
         public static VisualElement Row()
@@ -187,6 +222,7 @@ namespace IsaDo3D.EnvironmentArt
             Border(button, 0f, Color.clear);
             Radius(button, 5f);
             Margin(button, 0f);
+            HoverFeedback(button);
             return button;
         }
 
@@ -200,6 +236,8 @@ namespace IsaDo3D.EnvironmentArt
             Border(button, 0f, Color.clear);
             Margin(button, 0f);
             Padding(button, 0f, 4f);
+            Radius(button, 4f);
+            HoverFeedback(button);
             return button;
         }
     }
@@ -232,6 +270,7 @@ namespace IsaDo3D.EnvironmentArt
                 segment.style.justifyContent = Justify.Center;
                 IsaDo3DStyles.Radius(segment, 5f);
                 segment.AddManipulator(new Clickable(() => onSelect(index)));
+                IsaDo3DStyles.HoverFeedback(segment);
 
                 var label = new Label(options[i]);
                 label.pickingMode = PickingMode.Ignore;
@@ -252,6 +291,126 @@ namespace IsaDo3D.EnvironmentArt
                 _segments[i].style.backgroundColor = active ? IsaDo3DStyles.Accent : Color.clear;
                 _labels[i].style.color = active ? Color.white : IsaDo3DStyles.MutedColor;
                 _labels[i].style.unityFontStyleAndWeight = active ? FontStyle.Bold : FontStyle.Normal;
+            }
+        }
+    }
+
+    // Dropdown com o visual do pacote. O DropdownField da Unity abre o menu nativo do sistema, claro e sem estilo
+    internal class DropdownPill : VisualElement
+    {
+        private readonly List<string> _choices;
+        private readonly Label _text;
+        private Func<string, string> _menuLabel;
+        private Func<string, string> _fieldLabel;
+
+        public string value { get; private set; }
+
+        public event Action<string> Changed;
+
+        // Texto de cada opção no menu
+        public Func<string, string> MenuLabel
+        {
+            get => _menuLabel;
+            set => _menuLabel = value;
+        }
+
+        // Texto da opção escolhida, no campo fechado
+        public Func<string, string> FieldLabel
+        {
+            get => _fieldLabel;
+            set
+            {
+                _fieldLabel = value;
+                RefreshText();
+            }
+        }
+
+        public DropdownPill(List<string> choices, int index)
+        {
+            _choices = choices;
+
+            style.flexDirection = FlexDirection.Row;
+            style.alignItems = Align.Center;
+            style.height = 20f;
+            style.backgroundColor = IsaDo3DStyles.InsetColor;
+            IsaDo3DStyles.Border(this, 1f, IsaDo3DStyles.CardBorder);
+            IsaDo3DStyles.Radius(this, 5f);
+            IsaDo3DStyles.Padding(this, 0f, 7f);
+
+            _text = new Label { pickingMode = PickingMode.Ignore };
+            _text.style.flexGrow = 1f;
+            _text.style.flexShrink = 1f;
+            _text.style.overflow = Overflow.Hidden;
+            _text.style.color = IsaDo3DStyles.TextColor;
+            _text.style.unityTextAlign = TextAnchor.MiddleLeft;
+            Add(_text);
+
+            var arrow = new Label("\u25BE") { pickingMode = PickingMode.Ignore };
+            arrow.style.color = IsaDo3DStyles.MutedColor;
+            arrow.style.marginLeft = 4f;
+            Add(arrow);
+
+            value = choices.Count > 0 ? choices[Mathf.Clamp(index, 0, choices.Count - 1)] : "";
+            RefreshText();
+
+            this.AddManipulator(new Clickable(Open));
+            IsaDo3DStyles.HoverFeedback(this);
+        }
+
+        public void SetValueWithoutNotify(string newValue)
+        {
+            value = newValue;
+            RefreshText();
+        }
+
+        private void RefreshText()
+        {
+            _text.text = _fieldLabel != null ? _fieldLabel(value) : value;
+        }
+
+        private void Open()
+        {
+            var menu = new GenericDropdownMenu();
+            foreach (var choice in _choices)
+            {
+                string picked = choice;
+                menu.AddItem(_menuLabel != null ? _menuLabel(choice) : choice, choice == value, () =>
+                {
+                    if (picked == value) return;
+                    SetValueWithoutNotify(picked);
+                    Changed?.Invoke(picked);
+                });
+            }
+
+            StyleMenu(menu);
+#if UNITY_6000_5_OR_NEWER
+            menu.DropDown(worldBound, this, DropdownMenuSizeMode.Fixed);
+#else
+            menu.DropDown(worldBound, this, true);
+#endif
+        }
+
+        // O fundo de cada item fica com a Unity, senão o item perde o destaque do mouse
+        private static void StyleMenu(GenericDropdownMenu menu)
+        {
+            for (var element = menu.contentContainer; element != null; element = element.parent)
+            {
+                if (!element.ClassListContains("unity-base-dropdown__container-outer")) continue;
+
+                element.style.backgroundColor = IsaDo3DStyles.Dark ? IsaDo3DStyles.Hex(0x2F2F2F) : IsaDo3DStyles.Hex(0xE6E6E6);
+                IsaDo3DStyles.Border(element, 1f, IsaDo3DStyles.CardBorder);
+                IsaDo3DStyles.Radius(element, 7f);
+                IsaDo3DStyles.Padding(element, 4f, 4f);
+                break;
+            }
+
+            foreach (var item in menu.contentContainer.Children())
+            {
+                item.style.height = 22f;
+                IsaDo3DStyles.Radius(item, 4f);
+
+                var label = item.Q<Label>();
+                if (label != null) label.style.color = IsaDo3DStyles.TextColor;
             }
         }
     }

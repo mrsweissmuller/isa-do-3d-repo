@@ -70,9 +70,21 @@ namespace IsaDo3D.EnvironmentArt
 
         private Label _selectedCount;
         private VisualElement _groupButtons;
-        private Toggle _dryRunToggle;
+        private class AutoRow
+        {
+            public GameObject Object;
+            public Toggle Check;
+            public DropdownPill Destination;
+        }
+
+        private readonly List<AutoRow> _autoRows = new List<AutoRow>();
+        private Label _autoNote;
+        private VisualElement _autoPreview;
+        private VisualElement _autoList;
+        private Button _autoApply;
         private Button _normalizeButton;
         private TextField _separatorName;
+        private TextField _groupName;
 
         private Label _editingPill;
         private Label _bannerHint;
@@ -82,8 +94,8 @@ namespace IsaDo3D.EnvironmentArt
         private ColorField _backgroundColor;
         private ColorField _textColor;
         private Button _autoTextButton;
-        private DropdownField _alignField;
-        private DropdownField _fontField;
+        private DropdownPill _alignField;
+        private DropdownPill _fontField;
         private Button _resetButton;
         private Button _convertButton;
 
@@ -161,6 +173,7 @@ namespace IsaDo3D.EnvironmentArt
                 tab.style.justifyContent = Justify.Center;
                 Radius(tab, 5f);
                 tab.AddManipulator(new Clickable(() => SelectTab(index)));
+                HoverFeedback(tab);
 
                 var label = new Label(TabNames[i]);
                 label.pickingMode = PickingMode.Ignore;
@@ -208,10 +221,39 @@ namespace IsaDo3D.EnvironmentArt
         {
             var page = new VisualElement();
 
-            var defaults = Card("Default groups", "", out _);
+            var defaults = Card("Groups", "", out _);
             var create = FlatButton("Create default groups", true, CreateDefaultGroups);
             create.tooltip = "Adds the missing default groups to the scene root and puts them in order.";
             defaults.Add(create);
+
+            var groupRow = Row();
+            groupRow.style.marginTop = 6f;
+            _groupName = new TextField { value = "NEW GROUP", tooltip = "Name of the new group." };
+            _groupName.style.flexGrow = 1f;
+            _groupName.style.marginLeft = 0f;
+            groupRow.Add(_groupName);
+
+            var addGroup = FlatButton("New group", false, AddGroup);
+            addGroup.tooltip = "Adds a group above the selected root object, or at the end of the scene.";
+            addGroup.style.width = 100f;
+            addGroup.style.marginLeft = 4f;
+            groupRow.Add(addGroup);
+            defaults.Add(groupRow);
+
+            var foldRow = Row();
+            foldRow.style.marginTop = 6f;
+
+            var expandAll = FlatButton("Expand all", false, () => HierarchyHeaderRenderer.SetExpanded(FindHeaderGroups(), true));
+            expandAll.style.flexGrow = 1f;
+            expandAll.style.flexBasis = 0f;
+            expandAll.style.marginRight = 4f;
+            foldRow.Add(expandAll);
+
+            var collapseAll = FlatButton("Collapse all", false, () => HierarchyHeaderRenderer.SetExpanded(FindHeaderGroups(), false));
+            collapseAll.style.flexGrow = 1f;
+            collapseAll.style.flexBasis = 0f;
+            foldRow.Add(collapseAll);
+            defaults.Add(foldRow);
             page.Add(defaults);
 
             var move = Card("Move selection to group", "", out _selectedCount);
@@ -234,15 +276,39 @@ namespace IsaDo3D.EnvironmentArt
             separators.Add(separatorRow);
             page.Add(separators);
 
-            var auto = Card("Auto organize", "", out _);
-            _dryRunToggle = new Toggle("Dry run") { tooltip = "Logs where each object would go, without moving anything." };
-            _dryRunToggle.RegisterValueChangedCallback(e => _simulateOnly = e.newValue);
-            _dryRunToggle.style.marginBottom = 6f;
-            auto.Add(_dryRunToggle);
+            var auto = Card("Auto organize", "", out _autoNote);
+            var preview = FlatButton("Preview loose root objects", false, BuildAutoPreview);
+            preview.tooltip = "Suggests a group for each loose root object. Nothing moves until you confirm.";
+            auto.Add(preview);
 
-            var organize = FlatButton("Organize loose root objects", false, AutoOrganize);
-            organize.tooltip = "Moves each loose root object to the group that fits it. Objects with no rule stay put.";
-            auto.Add(organize);
+            _autoPreview = new VisualElement();
+            _autoPreview.style.marginTop = 8f;
+
+            var list = new ScrollView(ScrollViewMode.Vertical);
+            list.style.maxHeight = 260f;
+            list.style.backgroundColor = InsetColor;
+            Radius(list, 5f);
+            _autoList = list.contentContainer;
+            Padding(_autoList, 4f, 6f);
+            _autoPreview.Add(list);
+
+            var autoActions = Row();
+            autoActions.style.marginTop = 8f;
+
+            _autoApply = FlatButton("Move", true, ApplyAutoPreview);
+            _autoApply.style.height = 22f;
+            _autoApply.style.flexGrow = 1f;
+            _autoApply.style.flexBasis = 0f;
+            _autoApply.style.marginRight = 4f;
+            autoActions.Add(_autoApply);
+
+            var cancel = FlatButton("Cancel", false, ClearAutoPreview);
+            cancel.style.width = 70f;
+            autoActions.Add(cancel);
+            _autoPreview.Add(autoActions);
+
+            auto.Add(_autoPreview);
+            Show(_autoPreview, false);
             page.Add(auto);
 
             var names = Card("Names", "", out _);
@@ -252,6 +318,110 @@ namespace IsaDo3D.EnvironmentArt
             page.Add(names);
 
             return page;
+        }
+
+        // ---------- Auto organize ----------
+
+        private void BuildAutoPreview()
+        {
+            _autoRows.Clear();
+            _autoList.Clear();
+
+            var plan = PlanAutoOrganize();
+            var destinations = OrganizeDestinations();
+            Show(_autoPreview, true);
+
+            if (plan.Count == 0)
+            {
+                _autoList.Add(Note("No loose objects at the root."));
+                UpdateAutoCount();
+                return;
+            }
+
+            // Com sugestão primeiro, o que não tem regra fica no fim e desmarcado
+            foreach (var (go, suggestion) in plan.OrderBy(p => p.Destination == null))
+            {
+                var target = go;
+
+                var row = Row();
+                row.style.height = 22f;
+
+                var check = new Toggle { value = suggestion != null };
+                check.style.marginRight = 4f;
+                check.RegisterValueChangedCallback(_ => UpdateAutoCount());
+                row.Add(check);
+
+                var name = new Label(go.name) { tooltip = "Click to select this object." };
+                name.style.flexGrow = 1f;
+                name.style.flexShrink = 1f;
+                name.style.overflow = Overflow.Hidden;
+                name.style.color = suggestion != null ? TextColor : MutedColor;
+                name.AddManipulator(new Clickable(() =>
+                {
+                    if (target == null) return;
+                    Selection.activeGameObject = target;
+                    EditorGUIUtility.PingObject(target);
+                }));
+                row.Add(name);
+
+                int index = suggestion != null ? Mathf.Max(0, destinations.IndexOf(suggestion)) : 0;
+                // Subgrupo aparece recuado embaixo do grupo dele, sem submenu
+                var destination = new DropdownPill(destinations, index)
+                {
+                    MenuLabel = DestinationMenuLabel,
+                    FieldLabel = DestinationFieldLabel,
+                };
+                destination.style.width = 170f;
+                destination.style.flexShrink = 0f;
+
+                // Escolher um grupo já é querer mover
+                destination.Changed += _ => check.value = true;
+                row.Add(destination);
+
+                _autoRows.Add(new AutoRow { Object = go, Check = check, Destination = destination });
+                _autoList.Add(row);
+            }
+
+            UpdateAutoCount();
+        }
+
+        private static string DestinationMenuLabel(string path)
+        {
+            int slash = path.LastIndexOf('/');
+            return slash < 0 ? path : "      \u21B3 " + path.Substring(slash + 1);
+        }
+
+        private static string DestinationFieldLabel(string path)
+        {
+            return path.Replace("/", " \u203A ");
+        }
+
+        private void UpdateAutoCount()
+        {
+            int total = _autoRows.Count;
+            int marked = _autoRows.Count(r => r.Check.value);
+            _autoNote.text = total == 0 ? "" : $"{marked} of {total} marked";
+            _autoApply.text = $"Move {marked} object(s)";
+            _autoApply.SetEnabled(marked > 0);
+        }
+
+        private void ApplyAutoPreview()
+        {
+            var moves = _autoRows
+                .Where(r => r.Check.value)
+                .Select(r => (r.Object, r.Destination.value))
+                .ToList();
+
+            ApplyAutoOrganize(moves);
+            ClearAutoPreview();
+        }
+
+        private void ClearAutoPreview()
+        {
+            _autoRows.Clear();
+            _autoList.Clear();
+            _autoNote.text = "";
+            Show(_autoPreview, false);
         }
 
         private VisualElement BuildBannerPage()
@@ -332,22 +502,38 @@ namespace IsaDo3D.EnvironmentArt
             _styleFields.Add(textRow);
 
             var layoutRow = Row();
-            _alignField = new DropdownField("Layout", AlignLabels, 0);
-            _alignField.style.flexGrow = 1f;
-            _alignField.RegisterValueChangedCallback(e =>
+            layoutRow.style.marginTop = 2f;
+            layoutRow.style.marginLeft = 3f;
+            layoutRow.style.marginRight = 3f;
+
+            // Mesma largura do rótulo dos outros campos, que a Unity só define depois do layout
+            var layoutLabel = new Label("Layout");
+            layoutLabel.style.color = TextColor;
+            layoutLabel.style.minWidth = 120f;
+            _titleField.labelElement.RegisterCallback<GeometryChangedEvent>(e =>
             {
-                int index = AlignLabels.IndexOf(e.newValue);
-                if (index >= 0) EditSelected("align", s => s.Align = AlignValues[index]);
+                if (e.newRect.width > 0f) layoutLabel.style.width = e.newRect.width + 2f;
             });
+            layoutRow.Add(layoutLabel);
+
+            _alignField = new DropdownPill(AlignLabels, 0);
+            _alignField.style.flexGrow = 1f;
+            _alignField.style.flexBasis = 0f;
+            _alignField.style.marginRight = 4f;
+            _alignField.Changed += picked =>
+            {
+                int index = AlignLabels.IndexOf(picked);
+                if (index >= 0) EditSelected("align", s => s.Align = AlignValues[index]);
+            };
             layoutRow.Add(_alignField);
 
-            _fontField = new DropdownField(FontLabels, 0);
+            _fontField = new DropdownPill(FontLabels, 0);
             _fontField.style.width = 110f;
-            _fontField.RegisterValueChangedCallback(e =>
+            _fontField.Changed += picked =>
             {
-                int index = FontLabels.IndexOf(e.newValue);
+                int index = FontLabels.IndexOf(picked);
                 if (index >= 0) EditSelected("font", s => s.Font = FontValues[index]);
-            });
+            };
             layoutRow.Add(_fontField);
             _styleFields.Add(layoutRow);
 
@@ -444,6 +630,7 @@ namespace IsaDo3D.EnvironmentArt
                     Border(swatch, 0f, Color.clear);
                     Radius(swatch, 4f);
                     Margin(swatch, 2f);
+                    HoverFeedback(swatch);
                     row.Add(swatch);
                 }
                 _quickColors.Add(row);
@@ -611,6 +798,35 @@ namespace IsaDo3D.EnvironmentArt
         }
 
         // Sempre na raiz, é onde ficam os grupos que ele separa
+        private void AddGroup()
+        {
+            string clean = CleanName(_groupName.value ?? "");
+            if (clean.Length == 0) return;
+
+            // Dois grupos com o mesmo nome dividiriam o estilo e confundiriam o Auto organize
+            var existing = FindHeaderGroups()
+                .FirstOrDefault(g => CanonicalGroupKey(CleanName(g.name)) == CanonicalGroupKey(clean));
+            if (existing != null)
+            {
+                Selection.activeGameObject = existing;
+                EditorGUIUtility.PingObject(existing);
+                Debug.Log($"[Hierarchy Organizer] A group named '{clean}' already exists, selected it instead.");
+                return;
+            }
+
+            var scene = SceneManager.GetActiveScene();
+            var above = Target();
+            int index = above != null && above.scene == scene ? above.transform.root.GetSiblingIndex() : -1;
+
+            var group = new GameObject(BannerName(clean));
+            Undo.RegisterCreatedObjectUndo(group, "New group");
+            if (group.scene != scene) SceneManager.MoveGameObjectToScene(group, scene);
+            if (index >= 0) group.transform.SetSiblingIndex(index);
+
+            EditorSceneManager.MarkSceneDirty(scene);
+            Selection.activeGameObject = group;
+        }
+
         private void AddSeparator()
         {
             string clean = CleanTitle(_separatorName.value ?? "");
@@ -660,7 +876,6 @@ namespace IsaDo3D.EnvironmentArt
         {
             int selected = SelectedSceneObjects().Length;
             _selectedCount.text = $"{selected} selected";
-            _dryRunToggle.SetValueWithoutNotify(_simulateOnly);
             _normalizeButton.SetEnabled(selected > 0);
 
             _groupButtons.Clear();
@@ -691,6 +906,7 @@ namespace IsaDo3D.EnvironmentArt
                 button.style.marginTop = 0f;
                 Border(button, 0f, Color.clear);
                 Radius(button, 4f);
+                HoverFeedback(button);
                 button.SetEnabled(selected > 0);
                 _groupButtons.Add(button);
             }
@@ -955,7 +1171,39 @@ namespace IsaDo3D.EnvironmentArt
                 });
             }
 
+            // Só os filhos diretos dos grupos, é onde o Auto organize e o Move colocam as coisas
+            var rootOnly = banners
+                .SelectMany(b => b.transform.Cast<Transform>().Select(t => t.gameObject))
+                .Where(NeedsSceneRoot)
+                .ToArray();
+            if (rootOnly.Length > 0)
+            {
+                issues.Add(new LintIssue
+                {
+                    Message = $"{rootOnly.Length} object(s) inside groups use DontDestroyOnLoad, which only works at the scene root.",
+                    Objects = rootOnly,
+                    FixLabel = "Unparent",
+                    Fix = () => MoveToRoot(rootOnly),
+                });
+            }
+
             return issues;
+        }
+
+        private static void MoveToRoot(GameObject[] objects)
+        {
+            Undo.SetCurrentGroupName("Move to Scene Root");
+            int undoGroup = Undo.GetCurrentGroup();
+
+            foreach (var go in objects)
+            {
+                if (go == null || go.transform.parent == null) continue;
+
+                Undo.SetTransformParent(go.transform, null, "Move to scene root");
+                EditorSceneManager.MarkSceneDirty(go.scene);
+            }
+
+            Undo.CollapseUndoOperations(undoGroup);
         }
 
         private static void RenameTo(GameObject go, string name)

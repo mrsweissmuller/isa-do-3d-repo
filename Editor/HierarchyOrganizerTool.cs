@@ -118,8 +118,6 @@ namespace IsaDo3D.EnvironmentArt
             return group != null;
         }
 
-        private bool _simulateOnly;
-
         [MenuItem("Art Tools/Hierarchy Organizer", true)]
         private static bool IsOn() => IsaDo3DToolState.IsOn(ToolIds.HierarchyOrganizer);
 
@@ -266,6 +264,8 @@ namespace IsaDo3D.EnvironmentArt
         private static readonly (string Keyword, string Destination)[] NameRules =
         {
             ("spawn", "GAMEPLAY/Spawns"),
+            ("spawner", "GAMEPLAY/Spawns"),
+            ("spawnpoint", "GAMEPLAY/Spawns"),
             ("patrol", "GAMEPLAY/Spawns"),
             ("trigger", "GAMEPLAY/Triggers"),
             ("checkpoint", "GAMEPLAY/Triggers"),
@@ -274,27 +274,72 @@ namespace IsaDo3D.EnvironmentArt
             ("breakable", "GAMEPLAY/Interactables"),
             ("door", "GAMEPLAY/Interactables"),
             ("lever", "GAMEPLAY/Interactables"),
-            ("interact", "GAMEPLAY/Interactables"),
+            ("interactable", "GAMEPLAY/Interactables"),
+            ("interactive", "GAMEPLAY/Interactables"),
         };
 
-        // Por palavra, senão Outdoor_Lamp vira porta
+        // Por palavra inteira, senão Outdoor_Lamp e Doorway viram porta
         private static string[] NameTokens(string name)
         {
             var spaced = Regex.Replace(name, "([a-z0-9])([A-Z])", "$1 $2").ToLowerInvariant();
             return Regex.Split(spaced, "[^a-z0-9]+");
         }
 
-        // Mesh antes de luz: tocha (mesh + light) é prop
+        // Mesh antes de luz e de partícula: tocha (mesh + light + chama) é prop
+        // Por tipo, ler o texto do script a cada objeto ficaria caro
+        private static readonly Dictionary<System.Type, bool> RootOnlyTypes = new Dictionary<System.Type, bool>();
+        private static Dictionary<string, MonoScript> _scriptsByName;
+
+        private static bool ScriptNeedsRoot(System.Type type)
+        {
+            if (RootOnlyTypes.TryGetValue(type, out bool known)) return known;
+
+            if (_scriptsByName == null)
+            {
+                _scriptsByName = new Dictionary<string, MonoScript>();
+                foreach (var script in MonoImporter.GetAllRuntimeMonoScripts())
+                    if (script != null) _scriptsByName[script.name] = script;
+            }
+
+            bool needsRoot = false;
+
+            // A classe base conta, singleton genérico costuma chamar o DontDestroyOnLoad por ela
+            for (var current = type; current != null && current != typeof(MonoBehaviour); current = current.BaseType)
+            {
+                string name = current.Name;
+                int tick = name.IndexOf('`');
+                if (tick >= 0) name = name.Substring(0, tick);
+
+                if (_scriptsByName.TryGetValue(name, out var script) && script.text.Contains("DontDestroyOnLoad"))
+                {
+                    needsRoot = true;
+                    break;
+                }
+            }
+
+            RootOnlyTypes[type] = needsRoot;
+            return needsRoot;
+        }
+
+        // DontDestroyOnLoad só funciona em objeto da raiz da cena, dentro de um grupo ele para de persistir
+        internal static bool NeedsSceneRoot(GameObject go)
+        {
+            foreach (var behaviour in go.GetComponents<MonoBehaviour>())
+                if (behaviour != null && ScriptNeedsRoot(behaviour.GetType())) return true;
+            return false;
+        }
+
         private static string ClassifyObject(GameObject go)
         {
+            if (NeedsSceneRoot(go)) return null;
+
             var tokens = NameTokens(go.name);
             foreach (var (keyword, destination) in NameRules)
-                if (tokens.Any(t => t.StartsWith(keyword))) return destination;
+                if (tokens.Any(t => t == keyword || t == keyword + "s")) return destination;
 
             if (go.GetComponentInChildren<Terrain>(true) != null) return "ENVIRONMENT";
             if (go.GetComponentInChildren<Canvas>(true) != null) return "UI";
             if (go.GetComponentInChildren<Camera>(true) != null) return "SETUP";
-            if (go.GetComponentInChildren<ParticleSystem>(true) != null) return "VFX";
 
             bool hasMesh = go.GetComponentInChildren<MeshRenderer>(true) != null
                         || go.GetComponentInChildren<SkinnedMeshRenderer>(true) != null;
@@ -303,6 +348,8 @@ namespace IsaDo3D.EnvironmentArt
                 bool isStatic = go.GetComponentsInChildren<Transform>(true).Any(t => t.gameObject.isStatic);
                 return isStatic ? "ENVIRONMENT" : "PROPS";
             }
+
+            if (go.GetComponentInChildren<ParticleSystem>(true) != null) return "VFX";
 
             if (go.GetComponentInChildren<Light>(true) != null
                 || go.GetComponentInChildren<ReflectionProbe>(true) != null
@@ -346,45 +393,58 @@ namespace IsaDo3D.EnvironmentArt
             return current.gameObject;
         }
 
-        private void AutoOrganize()
+        // Só sugere. Destination nulo é objeto sem regra, e nada se move antes de confirmar na janela
+        private static List<(GameObject Object, string Destination)> PlanAutoOrganize()
+        {
+            return SceneManager.GetActiveScene().GetRootGameObjects()
+                .Where(go => !go.name.StartsWith(HeaderPrefix) && !IsTitle(go.name))
+                .Select(go => (go, ClassifyObject(go)))
+                .ToList();
+        }
+
+        // Padrões, subgrupos de GAMEPLAY e os grupos personalizados que já estão na cena
+        private static List<string> OrganizeDestinations()
+        {
+            var destinations = new List<string>();
+            foreach (var group in DefaultGroups)
+            {
+                destinations.Add(group.Name);
+                if (group.Name != "GAMEPLAY") continue;
+                foreach (var sub in GameplaySubGroups) destinations.Add("GAMEPLAY/" + sub);
+            }
+
+            foreach (var custom in FindHeaderGroups().Select(g => CleanName(g.name)))
+            {
+                if (FindDefaultGroup(custom) == null && !destinations.Contains(custom)) destinations.Add(custom);
+            }
+
+            return destinations;
+        }
+
+        private static int ApplyAutoOrganize(List<(GameObject Object, string Destination)> moves)
         {
             Undo.SetCurrentGroupName("Auto Organize Hierarchy");
             int undoGroup = Undo.GetCurrentGroup();
 
             var cache = BuildGroupCache();
+            var scene = SceneManager.GetActiveScene();
 
-            var loose = SceneManager.GetActiveScene().GetRootGameObjects()
-                .Where(go => !go.name.StartsWith(HeaderPrefix) && !IsTitle(go.name))
-                .ToArray();
-
-            int moved = 0, skipped = 0;
-            var report = new StringBuilder();
-
-            foreach (var go in loose)
+            int moved = 0;
+            foreach (var (go, destination) in moves)
             {
-                string groupName = ClassifyObject(go);
-                if (groupName == null)
-                {
-                    skipped++;
-                    report.AppendLine($"  (no rule) {go.name}");
-                    continue;
-                }
+                // A prévia pode estar velha: objeto apagado, de outra cena ou que já saiu da raiz
+                if (go == null || string.IsNullOrEmpty(destination)) continue;
+                if (go.scene != scene || go.transform.parent != null) continue;
 
-                report.AppendLine($"  {go.name} goes to {groupName}");
-                if (!_simulateOnly)
-                    Undo.SetTransformParent(go.transform, GetOrCreateGroupPath(groupName, cache, out _).transform, "Move to group");
+                Undo.SetTransformParent(go.transform, GetOrCreateGroupPath(destination, cache, out _).transform, "Move to group");
                 moved++;
             }
 
-            if (!_simulateOnly && moved > 0)
-                EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
-
+            if (moved > 0) EditorSceneManager.MarkSceneDirty(scene);
             Undo.CollapseUndoOperations(undoGroup);
 
-            string summary = _simulateOnly
-                ? $"[Hierarchy Organizer] Dry run: {moved} object(s) would move, {skipped} have no rule."
-                : $"[Hierarchy Organizer] Organized {moved} object(s), left {skipped} at the root (no rule).";
-            Debug.Log(summary + "\n" + report);
+            Debug.Log($"[Hierarchy Organizer] Organized {moved} object(s).");
+            return moved;
         }
 
         // O _02 é do asset, só o " (n)" é da Unity
@@ -585,6 +645,41 @@ namespace IsaDo3D.EnvironmentArt
             UHE.HierarchyWindow.UnbindViewItem += OnUnbindViewItem;
             Selection.selectionChanged += RepaintHeaderRows;
             EditorApplication.hierarchyChanged += RepaintTreeLines;
+#endif
+        }
+
+        internal static void SetExpanded(List<GameObject> groups, bool expanded)
+        {
+#if UNITY_6000_5_OR_NEWER
+            foreach (var window in Resources.FindObjectsOfTypeAll<UHE.HierarchyWindow>())
+            {
+                var view = window.View;
+                var handler = view?.Source?.GetNodeTypeHandlerBase<UHE.HierarchyGameObjectHandler>();
+                if (handler == null) continue;
+
+                foreach (var group in groups)
+                {
+                    if (group == null) continue;
+
+                    var node = handler.GetOrCreateNode(group);
+                    if (expanded) view.Expand(node);
+                    else view.Collapse(node);
+                }
+            }
+#else
+            // A Hierarchy antiga não tem API pública pra isso
+            var windowType = typeof(Editor).Assembly.GetType("UnityEditor.SceneHierarchyWindow");
+            var setExpanded = windowType?.GetMethod(
+                "SetExpanded",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic,
+                null, new[] { typeof(int), typeof(bool) }, null);
+            if (setExpanded == null) return;
+
+            foreach (var window in Resources.FindObjectsOfTypeAll(windowType))
+            {
+                foreach (var group in groups)
+                    if (group != null) setExpanded.Invoke(window, new object[] { group.GetInstanceID(), expanded });
+            }
 #endif
         }
 
