@@ -6,13 +6,13 @@ using UnityEngine.UIElements;
 
 namespace IsaDo3D.EnvironmentArt
 {
-    [Overlay(typeof(SceneView), "Isa do 3D", true)]
+    [Overlay(typeof(SceneView), "Art Tools", true)]
     public class IsaDo3DToolbarOverlay : ToolbarOverlay
     {
         public IsaDo3DToolbarOverlay() : base(
             OpenInBlenderButton.Id,
             OpenInMayaButton.Id,
-            OpenInKritaButton.Id,
+            OpenInImageEditorButton.Id,
             PivotToolButton.Id,
             MaterialBatchButton.Id,
             HierarchyOrganizerButton.Id)
@@ -78,7 +78,7 @@ namespace IsaDo3D.EnvironmentArt
         public const string Id = "IsaDo3D/OpenInBlenderButton";
 
         public OpenInBlenderButton() : base(ToolIds.Blender, "Blender",
-            "Abrir a mesh do objeto selecionado no Blender", OpenInBlender.OpenSelected) { }
+            "Open the selected object's mesh in Blender", OpenInBlender.OpenSelected) { }
     }
 
     [EditorToolbarElement(Id, typeof(SceneView))]
@@ -87,16 +87,16 @@ namespace IsaDo3D.EnvironmentArt
         public const string Id = "IsaDo3D/OpenInMayaButton";
 
         public OpenInMayaButton() : base(ToolIds.Maya, "Maya",
-            "Abrir a mesh do objeto selecionado no Maya", OpenInMaya.OpenSelected) { }
+            "Open the selected object's mesh in Maya", OpenInMaya.OpenSelected) { }
     }
 
     [EditorToolbarElement(Id, typeof(SceneView))]
-    internal class OpenInKritaButton : ToolButton
+    internal class OpenInImageEditorButton : ToolButton
     {
-        public const string Id = "IsaDo3D/OpenInKritaButton";
+        public const string Id = "IsaDo3D/OpenInImageEditorButton";
 
-        public OpenInKritaButton() : base(ToolIds.Krita, "Krita",
-            "Abrir a textura do objeto selecionado no Krita", OpenInKrita.OpenSelected) { }
+        public OpenInImageEditorButton() : base(ToolIds.ImageEditor, "Image",
+            "Open the selected object's texture in the image editor", OpenInImageEditor.OpenSelected) { }
     }
 
     [EditorToolbarElement(Id, typeof(SceneView))]
@@ -105,7 +105,7 @@ namespace IsaDo3D.EnvironmentArt
         public const string Id = "IsaDo3D/PivotToolButton";
 
         public PivotToolButton() : base(ToolIds.ObjectEditor, "O.E.",
-            "Abrir o Object Editor", PrefabPivotTool.Open) { }
+            "Open the Object Editor", PrefabPivotTool.Open) { }
     }
 
     [EditorToolbarElement(Id, typeof(SceneView))]
@@ -114,7 +114,7 @@ namespace IsaDo3D.EnvironmentArt
         public const string Id = "IsaDo3D/MaterialBatchButton";
 
         public MaterialBatchButton() : base(ToolIds.MaterialBatch, "M.B.",
-            "Abrir o Material Batch (aplicar um material nos objetos selecionados)", MaterialBatchTool.Open) { }
+            "Open Material Batch (apply one material to the selected objects)", MaterialBatchTool.Open) { }
     }
 
     [EditorToolbarElement(Id, typeof(SceneView))]
@@ -123,7 +123,7 @@ namespace IsaDo3D.EnvironmentArt
         public const string Id = "IsaDo3D/HierarchyOrganizerButton";
 
         public HierarchyOrganizerButton() : base(ToolIds.HierarchyOrganizer, "H.O.",
-            "Abrir o Hierarchy Organizer (grupos, organização automática e renomear em lote)",
+            "Open the Hierarchy Organizer (groups, auto organize and batch rename)",
             HierarchyOrganizerTool.Open) { }
     }
 }

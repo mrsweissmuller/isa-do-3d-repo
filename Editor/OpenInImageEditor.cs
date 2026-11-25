@@ -12,63 +12,111 @@ using Object = UnityEngine.Object;
 
 namespace IsaDo3D.EnvironmentArt
 {
-    public static class OpenInKrita
+    public static class OpenInImageEditor
     {
-        private const string KritaPathPrefKey = "Isa3D.OpenInKrita.KritaPath";
-        private const string KritaDefaultRoot = "C:/Program Files";
+        // O mesmo que a Unity usa em Preferences > External Tools > Image application
+        private const string UnityImageAppPrefKey = "kImagesDefaultApp";
+
+        // De quando a ferramenta só abria o Krita e guardava o caminho dele
+        private const string LegacyKritaPathPrefKey = "Isa3D.OpenInKrita.KritaPath";
         private const string KritaSourceExtension = ".kra";
 
         private static readonly string[] OpenableExtensions =
             { ".png", ".jpg", ".jpeg", ".tga", ".tif", ".tiff", ".psd", ".exr", ".bmp", ".gif", KritaSourceExtension };
 
-        [MenuItem("Isa do 3D/Krita/Configurar Caminho do Krita...")]
-        public static void ConfigureKritaPath()
+        // Vazio é sem programa escolhido, aí abre com o que o Windows associa ao arquivo
+        internal static string EditorPath
         {
-            ExternalToolLocator.ConfigurePath(KritaPathPrefKey, "[Krita]", "Krita", "krita.exe", KritaDefaultRoot);
+            get
+            {
+                var chosen = EditorPrefs.GetString(UnityImageAppPrefKey, "");
+                if (!string.IsNullOrEmpty(chosen)) return chosen;
+
+                var legacy = EditorPrefs.GetString(LegacyKritaPathPrefKey, "");
+                return File.Exists(legacy) ? legacy : "";
+            }
         }
 
-        [MenuItem("Isa do 3D/Krita/Configurar Caminho do Krita...", true)]
-        [MenuItem("Isa do 3D/Krita/Abrir Selecionado no Krita", true)]
-        private static bool IsOn() => IsaDo3DToolState.IsOn(ToolIds.Krita);
+        // Grava na preferência da Unity, então o duplo clique numa textura passa a abrir no mesmo programa
+        public static void ConfigureEditorPath()
+        {
+            var current = EditorPath;
+            var path = EditorUtility.OpenFilePanel(
+                "Select the image editor",
+                string.IsNullOrEmpty(current) ? "C:/Program Files" : Path.GetDirectoryName(current),
+                "exe");
+            if (string.IsNullOrEmpty(path)) return;
 
-        [MenuItem("Assets/Abrir no Krita", true)]
-        [MenuItem("GameObject/Abrir no Krita", true)]
+            EditorPrefs.SetString(UnityImageAppPrefKey, path);
+            Debug.Log($"[Image Editor] Image application set to: {path}");
+        }
+
+        private static bool IsOn() => IsaDo3DToolState.IsOn(ToolIds.ImageEditor);
+
+        [MenuItem("Assets/Open in Image Editor", true)]
+        [MenuItem("GameObject/Open in Image Editor", true)]
         private static bool ValidateOpen()
         {
             return IsOn() && TryResolveTextureAssetPath(Selection.activeObject, out _, out _);
         }
 
-        [MenuItem("Assets/Abrir no Krita")]
-        [MenuItem("GameObject/Abrir no Krita", false, 0)]
-        [MenuItem("Isa do 3D/Krita/Abrir Selecionado no Krita")]
+        [MenuItem("Assets/Open in Image Editor")]
+        [MenuItem("GameObject/Open in Image Editor", false, 0)]
         public static void OpenSelected()
         {
             if (!TryResolveTextureAssetPath(Selection.activeObject, out var textureAssetPath, out var sourceDescription))
             {
                 EditorUtility.DisplayDialog(
-                    "Abrir no Krita",
-                    "Selecione uma textura, um material ou um objeto que use um material com textura.",
+                    "Open in Image Editor",
+                    "Select a texture, a material or an object that uses a textured material.",
                     "OK");
                 return;
             }
 
-            var kritaPath = GetOrPromptKritaPath();
-            if (string.IsNullOrEmpty(kritaPath)) return;
-
             var absoluteTexturePath = AssetPaths.Absolute(textureAssetPath);
             if (!File.Exists(absoluteTexturePath))
             {
-                Debug.LogError($"[Krita] Arquivo não encontrado no disco: {absoluteTexturePath}");
+                Debug.LogError($"[Image Editor] File not found on disk: {absoluteTexturePath}");
                 return;
             }
 
-            // Com fonte .kra associado abre ele, a textura continua vigiada pra recarregar quando for exportada
-            var kritaSourcePath = FindKritaSource(absoluteTexturePath);
+            var editorPath = EditorPath;
+            bool hasEditor = !string.IsNullOrEmpty(editorPath);
+            if (hasEditor && !File.Exists(editorPath))
+            {
+                Debug.LogError($"[Image Editor] Image application not found: {editorPath}. Set it again in Art Tools/Settings...");
+                return;
+            }
+
+            // O fonte .kra só o Krita abre. Sem programa escolhido o Windows manda ele pra quem estiver associado.
+            // Com fonte, a textura continua vigiada pra recarregar quando for exportada
+            var kritaSourcePath = !hasEditor || IsKrita(editorPath) ? FindKritaSource(absoluteTexturePath) : null;
             var fileToOpen = kritaSourcePath ?? absoluteTexturePath;
+
+            if (!Launch(editorPath, fileToOpen)) return;
+
+            Debug.Log(kritaSourcePath != null
+                ? $"[Image Editor] Opening the source of '{sourceDescription}' ({kritaSourcePath})."
+                : $"[Image Editor] Opening '{sourceDescription}' ({absoluteTexturePath}).");
+            StartWatching(textureAssetPath, absoluteTexturePath);
+        }
+
+        private static bool IsKrita(string editorPath)
+        {
+            return Path.GetFileNameWithoutExtension(editorPath).ToLowerInvariant().Contains("krita");
+        }
+
+        private static bool Launch(string editorPath, string fileToOpen)
+        {
+            if (string.IsNullOrEmpty(editorPath))
+            {
+                EditorUtility.OpenWithDefaultApp(fileToOpen);
+                return true;
+            }
 
             var psi = new ProcessStartInfo
             {
-                FileName = kritaPath,
+                FileName = editorPath,
                 Arguments = $"\"{fileToOpen}\"",
                 UseShellExecute = false,
                 CreateNoWindow = true,
@@ -77,17 +125,13 @@ namespace IsaDo3D.EnvironmentArt
             try
             {
                 Process.Start(psi);
+                return true;
             }
             catch (Exception e) when (e is Win32Exception || e is FileNotFoundException)
             {
-                Debug.LogError($"[Krita] Falha ao iniciar o Krita em '{kritaPath}': {e.Message}");
-                return;
+                Debug.LogError($"[Image Editor] Failed to start '{editorPath}': {e.Message}");
+                return false;
             }
-
-            Debug.Log(kritaSourcePath != null
-                ? $"[Krita] Abrindo o fonte de '{sourceDescription}' ({kritaSourcePath}) no Krita."
-                : $"[Krita] Abrindo '{sourceDescription}' ({absoluteTexturePath}) no Krita.");
-            StartWatching(textureAssetPath, absoluteTexturePath);
         }
 
         // Escrito pelo plugin "Exportar para Unity" do Krita: { "map": { "<fonte .kra>": "<textura exportada>" } }
@@ -122,7 +166,7 @@ namespace IsaDo3D.EnvironmentArt
             }
             catch (Exception e) when (e is IOException || e is ArgumentException || e is UnauthorizedAccessException)
             {
-                Debug.LogWarning($"[Krita] Não consegui ler o mapa de fontes em '{mapPath}': {e.Message}");
+                Debug.LogWarning($"[Image Editor] Could not read the source map at '{mapPath}': {e.Message}");
             }
 
             return null;
@@ -131,23 +175,6 @@ namespace IsaDo3D.EnvironmentArt
         private static string ComparablePath(string path)
         {
             return Path.GetFullPath(path).Replace('\\', '/').ToLowerInvariant();
-        }
-
-        private static string GetOrPromptKritaPath()
-        {
-            return ExternalToolLocator.GetOrPromptPath(KritaPathPrefKey, "[Krita]", "Krita", "krita.exe", KritaDefaultRoot, TryAutoDetectKrita);
-        }
-
-        private static string TryAutoDetectKrita()
-        {
-            var candidates = new[]
-            {
-                "C:/Program Files/Krita (x64)/bin/krita.exe",
-                "C:/Program Files/Krita/bin/krita.exe",
-                "C:/Program Files (x86)/Krita (x86)/bin/krita.exe",
-            };
-
-            return candidates.FirstOrDefault(File.Exists);
         }
 
         private static bool TryResolveTextureAssetPath(Object selected, out string assetPath, out string sourceDescription)
@@ -202,7 +229,7 @@ namespace IsaDo3D.EnvironmentArt
             if (textures.Count > 1)
             {
                 var others = string.Join(", ", textures.Skip(1).Select(t => $"{t.Property} ({Path.GetFileName(t.Path)})"));
-                Debug.Log($"[Krita] '{material.name}' tem mais textura: {others}. Pra abrir uma dessas, selecione ela no Project.");
+                Debug.Log($"[Image Editor] '{material.name}' has more textures: {others}. To open one of them, select it in the Project.");
             }
 
             return true;
@@ -231,7 +258,7 @@ namespace IsaDo3D.EnvironmentArt
             }
 
             // mainTexture cobre o _MainTex e o _BaseMap
-            TryAdd("textura principal", material.mainTexture);
+            TryAdd("main texture", material.mainTexture);
 
             foreach (var property in material.GetTexturePropertyNames())
                 TryAdd(property, material.GetTexture(property));
@@ -263,10 +290,10 @@ namespace IsaDo3D.EnvironmentArt
         private static readonly Dictionary<string, WatchedTexture> Watched = new Dictionary<string, WatchedTexture>();
         private static double _nextPoll;
 
-        [MenuItem("Isa do 3D/Krita/Parar de Recarregar ao Salvar", true)]
-        private static bool ValidateStopWatching() => Watched.Count > 0;
+        // Pra janela de Settings mostrar quantas estão vigiadas e oferecer o Stop
+        internal static int WatchedCount => Watched.Count;
+        internal static event Action WatchListChanged;
 
-        [MenuItem("Isa do 3D/Krita/Parar de Recarregar ao Salvar")]
         public static void StopWatching()
         {
             int count = Watched.Count;
@@ -274,8 +301,8 @@ namespace IsaDo3D.EnvironmentArt
             SaveWatchList();
             EditorApplication.update -= Poll;
 
-            Debug.Log($"[Krita] Parei de vigiar {count} textura(s). Elas continuam abertas no Krita, " +
-                      "só não recarregam sozinhas aqui.");
+            Debug.Log($"[Image Editor] Stopped watching {count} texture(s). They stay open in the editor, " +
+                      "they just no longer reload here on their own.");
         }
 
         private static void StartWatching(string assetPath, string absolutePath)
@@ -297,7 +324,7 @@ namespace IsaDo3D.EnvironmentArt
             EditorApplication.update -= Poll;
             EditorApplication.update += Poll;
 
-            Debug.Log($"[Krita] Vigiando '{Path.GetFileName(assetPath)}'. Salvou no Krita, reimporta aqui.");
+            Debug.Log($"[Image Editor] Watching '{Path.GetFileName(assetPath)}'. Save it in the editor and it reimports here.");
         }
 
         private static void Poll()
@@ -319,7 +346,7 @@ namespace IsaDo3D.EnvironmentArt
                 {
                     Watched.Remove(watched.AssetPath);
                     listChanged = true;
-                    Debug.Log($"[Krita] '{Path.GetFileName(watched.AssetPath)}' sumiu do disco, parei de vigiar.");
+                    Debug.Log($"[Image Editor] '{Path.GetFileName(watched.AssetPath)}' is gone from disk, stopped watching.");
                     continue;
                 }
 
@@ -341,7 +368,7 @@ namespace IsaDo3D.EnvironmentArt
                 watched.PendingWrite = default;
 
                 AssetDatabase.ImportAsset(watched.AssetPath, ImportAssetOptions.ForceUpdate);
-                Debug.Log($"[Krita] Recarreguei '{Path.GetFileName(watched.AssetPath)}'.");
+                Debug.Log($"[Image Editor] Reloaded '{Path.GetFileName(watched.AssetPath)}'.");
             }
 
             if (listChanged) SaveWatchList();
@@ -351,6 +378,7 @@ namespace IsaDo3D.EnvironmentArt
         {
             // '|' não pode em caminho no Windows
             SessionState.SetString(WatchListSessionKey, string.Join("|", Watched.Keys));
+            WatchListChanged?.Invoke();
         }
 
         [InitializeOnLoadMethod]

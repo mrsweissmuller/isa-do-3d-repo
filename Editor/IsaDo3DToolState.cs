@@ -11,20 +11,19 @@ namespace IsaDo3D.EnvironmentArt
     {
         public const string ObjectEditor = "OBJECT_EDITOR";
         public const string MaterialBatch = "MATERIAL_BATCH";
-        public const string ComponentCopy = "COMPONENT_COPY";
         public const string HierarchyOrganizer = "HIERARCHY_ORGANIZER";
         public const string HierarchyHeaders = "HIERARCHY_HEADERS";
         public const string TextureMaterial = "TEXTURE_MATERIAL";
-        public const string NamingFixer = "NAMING_FIXER";
         public const string Blender = "BLENDER";
         public const string Maya = "MAYA";
-        public const string Krita = "KRITA";
+        // O valor é do tempo em que só abria o Krita, mudar desligaria a ferramenta de quem já tinha ligado
+        public const string ImageEditor = "KRITA";
         public const string Overlay = "OVERLAY";
 
         public static readonly string[] All =
         {
-            ObjectEditor, MaterialBatch, ComponentCopy, HierarchyOrganizer, HierarchyHeaders,
-            TextureMaterial, NamingFixer, Blender, Maya, Krita, Overlay,
+            ObjectEditor, MaterialBatch, HierarchyOrganizer, HierarchyHeaders,
+            TextureMaterial, Blender, Maya, ImageEditor, Overlay,
         };
     }
 
@@ -39,7 +38,8 @@ namespace IsaDo3D.EnvironmentArt
 
         internal static bool IsOn(string tool) => instance._enabled.Contains(tool);
 
-        internal static HashSet<string> Enabled() => new HashSet<string>(instance._enabled);
+        // Id de ferramenta que já saiu do pacote continua no arquivo de quem tinha ela ligada
+        internal static HashSet<string> Enabled() => new HashSet<string>(instance._enabled.Where(ToolIds.All.Contains));
 
         internal static void SetEnabled(IEnumerable<string> tools)
         {
@@ -69,13 +69,13 @@ namespace IsaDo3D.EnvironmentArt
 
                 if (migrated.Length == 0)
                 {
-                    Debug.Log("[Isa do 3D] Nenhuma ferramenta ligada pra você neste projeto. " +
-                              "Menu Isa do 3D/Ferramentas... pra escolher quais entram.");
+                    Debug.Log("[Art Tools] No tools are enabled for you in this project. " +
+                              "Use Art Tools/Settings... to pick them.");
                     return;
                 }
 
-                Debug.Log($"[Isa do 3D] {migrated.Length} ferramenta(s) que estavam ligadas por define agora ficam salvas só pra você, em UserSettings. " +
-                          "Os defines ISADO3D_ saíram do ProjectSettings.asset, dá pra commitar essa limpeza.");
+                Debug.Log($"[Art Tools] {migrated.Length} tool(s) that were enabled by scripting define are now saved just for you, in UserSettings. " +
+                          "The ISADO3D_ defines were removed from ProjectSettings.asset, and that cleanup can be committed.");
             };
         }
 

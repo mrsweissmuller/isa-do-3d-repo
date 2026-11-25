@@ -2,8 +2,11 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
 using UnityEditor.SceneManagement;
+using UnityEditor.UIElements;
 using UnityEditorInternal;
 using UnityEngine;
+using UnityEngine.UIElements;
+using static IsaDo3D.EnvironmentArt.IsaDo3DStyles;
 
 namespace IsaDo3D.EnvironmentArt
 {
@@ -19,12 +22,24 @@ namespace IsaDo3D.EnvironmentArt
         private bool _vertexSnapActive;
         private GameObject _lastSelected;
         private GameObject _surfaceTarget;
-        private Vector2 _scroll;
 
-        [MenuItem("Isa do 3D/Cena/Object Editor", true)]
+        private Label _status;
+        private VisualElement _cards;
+        private ObjectField _targetField;
+        private Label _holderNote;
+        private Button _revertButton;
+        private Toggle _customToggle;
+        private VisualElement _customFields;
+        private Label _positionLabel;
+        private Toggle _snapToggle;
+        private Label _snapNote;
+        private ObjectField _surfaceField;
+        private Button _snapButton;
+
+        [MenuItem("Art Tools/Object Editor", true)]
         private static bool IsOn() => IsaDo3DToolState.IsOn(ToolIds.ObjectEditor);
 
-        [MenuItem("Isa do 3D/Cena/Object Editor")]
+        [MenuItem("Art Tools/Object Editor", false, 0)]
         public static void Open()
         {
             GetWindow<PrefabPivotTool>("Object Editor");
@@ -42,123 +57,220 @@ namespace IsaDo3D.EnvironmentArt
 
         private void OnSelectionChange()
         {
-            Repaint();
+            Refresh();
         }
 
-        private void OnGUI()
+        // Desfazer e reverter mexem no pivô sem trocar a seleção
+        private void OnHierarchyChange()
         {
-            var target = Selection.activeGameObject;
+            Refresh();
+        }
 
+        private void CreateGUI()
+        {
+            minSize = new Vector2(320f, 300f);
+
+            var page = Page(rootVisualElement);
+            page.Add(Header("Object Editor"));
+
+            _status = Note("");
+            page.Add(_status);
+
+            _cards = new VisualElement();
+            _cards.Add(BuildTargetCard());
+            _cards.Add(BuildPivotCard());
+            _cards.Add(BuildSurfaceCard());
+            page.Add(_cards);
+
+            Refresh();
+        }
+
+        private VisualElement BuildTargetCard()
+        {
+            var card = Card("Selected object");
+
+            _targetField = new ObjectField { objectType = typeof(GameObject), allowSceneObjects = true };
+            _targetField.SetEnabled(false);
+            card.Add(_targetField);
+
+            _holderNote = Note("");
+            _holderNote.style.marginTop = 6f;
+            card.Add(_holderNote);
+
+            _revertButton = FlatButton("Revert pivot", false, () =>
+            {
+                var target = Selection.activeGameObject;
+                var holder = target != null ? ResolvePivotHolder(target) : null;
+                if (holder != null) RevertPivot(holder);
+            });
+            _revertButton.tooltip = "Restores the model's original pivot.";
+            _revertButton.style.marginTop = 6f;
+            card.Add(_revertButton);
+
+            return card;
+        }
+
+        private VisualElement BuildPivotCard()
+        {
+            var card = Card("Edit pivot", "this instance only", out _);
+
+            card.Add(Section("Automatic"));
+            var presets = Row();
+            presets.style.marginBottom = 10f;
+            presets.Add(PresetButton("Center", PivotPreset.Center, 4f));
+            presets.Add(PresetButton("Bottom", PivotPreset.Bottom, 4f));
+            presets.Add(PresetButton("Top", PivotPreset.Top, 0f));
+            card.Add(presets);
+
+            card.Add(Section("Manual"));
+            _customToggle = new Toggle("Enable editable mode");
+            _customToggle.RegisterValueChangedCallback(e =>
+            {
+                _customModeActive = e.newValue;
+                SceneView.RepaintAll();
+                Refresh();
+            });
+            card.Add(_customToggle);
+
+            _customFields = new VisualElement();
+
+            _positionLabel = new Label();
+            _positionLabel.style.color = TextColor;
+            _positionLabel.style.marginTop = 4f;
+            _positionLabel.style.marginBottom = 4f;
+            _customFields.Add(_positionLabel);
+
+            _snapToggle = new Toggle("Snap to vertex")
+            {
+                tooltip = "Ctrl+Click a point on the model to snap to the nearest vertex.",
+            };
+            _snapToggle.RegisterValueChangedCallback(e =>
+            {
+                _vertexSnapActive = e.newValue;
+                Refresh();
+            });
+            _customFields.Add(_snapToggle);
+
+            _snapNote = Note("Ctrl+Click the model.");
+            _customFields.Add(_snapNote);
+
+            var apply = FlatButton("Apply", true, () =>
+            {
+                var target = Selection.activeGameObject;
+                if (target == null) return;
+
+                ApplyPivot(target, _customPivot);
+                _customModeActive = false;
+                SceneView.RepaintAll();
+                Refresh();
+            });
+            apply.style.marginTop = 8f;
+            _customFields.Add(apply);
+
+            card.Add(_customFields);
+            return card;
+        }
+
+        private static Button PresetButton(string text, PivotPreset preset, float gap)
+        {
+            var button = FlatButton(text, false, () =>
+            {
+                var target = Selection.activeGameObject;
+                if (target != null) ApplyPivot(target, PivotFromPreset(target, preset));
+            });
+            button.style.flexGrow = 1f;
+            button.style.flexBasis = 0f;
+            button.style.marginRight = gap;
+            return button;
+        }
+
+        private VisualElement BuildSurfaceCard()
+        {
+            var card = Card("Snap objects to a surface");
+
+            var surfaceRow = Row();
+            var setSurface = FlatButton("Set surface", false, () =>
+            {
+                _surfaceTarget = Selection.activeGameObject;
+                Refresh();
+            });
+            setSurface.tooltip = "Uses the selected object as the reference surface.";
+            setSurface.style.width = 120f;
+            setSurface.style.marginRight = 4f;
+            surfaceRow.Add(setSurface);
+
+            _surfaceField = new ObjectField { objectType = typeof(GameObject), allowSceneObjects = true };
+            _surfaceField.style.flexGrow = 1f;
+            _surfaceField.style.flexShrink = 1f;
+            _surfaceField.RegisterValueChangedCallback(e =>
+            {
+                var newSurface = e.newValue as GameObject;
+                if (newSurface != null && !newSurface.scene.IsValid())
+                    Debug.LogWarning($"[Object Editor] '{newSurface.name}' is a Project asset, not a scene object. Drag an object from the Hierarchy.");
+                else
+                    _surfaceTarget = newSurface;
+                Refresh();
+            });
+            surfaceRow.Add(_surfaceField);
+            card.Add(surfaceRow);
+
+            _snapButton = FlatButton("", true, SnapSelectedPivotsToSurface);
+            _snapButton.tooltip = "Moves the selected objects to the height of the surface's pivot, keeping X and Z.";
+            _snapButton.style.marginTop = 8f;
+            card.Add(_snapButton);
+
+            return card;
+        }
+
+        private void Refresh()
+        {
+            if (_cards == null) return;
+
+            var target = Selection.activeGameObject;
             if (target != _lastSelected)
             {
                 _lastSelected = target;
                 if (target != null) _customPivot = CalculateBounds(target).center;
             }
 
-            if (target == null)
-            {
-                EditorGUILayout.HelpBox("Selecione um objeto na cena (na Hierarchy ou na Scene View).", MessageType.Info);
-                return;
-            }
-
             // Reparentar asset do Project a Unity recusa, e mover a posição dele editaria o prefab
-            if (!target.scene.IsValid())
+            bool inScene = target != null && target.scene.IsValid();
+            SetVisible(_status, !inScene);
+            SetVisible(_cards, inScene);
+            if (!inScene)
             {
-                EditorGUILayout.HelpBox($"'{target.name}' é um asset do Project. Abra o prefab ou selecione uma instância na cena.", MessageType.Info);
+                _status.text = target == null
+                    ? "Select an object in the scene."
+                    : $"'{target.name}' is a Project asset. Open the prefab or select an instance in the scene.";
                 return;
             }
 
-            using (var scroll = new EditorGUILayout.ScrollViewScope(_scroll))
+            var existingHolder = ResolvePivotHolder(target);
+            _targetField.SetValueWithoutNotify(target);
+            SetVisible(_holderNote, existingHolder != null);
+            SetVisible(_revertButton, existingHolder != null);
+            if (existingHolder != null)
             {
-                _scroll = scroll.scrollPosition;
-                var existingHolder = ResolvePivotHolder(target);
-
-                using (new EditorGUILayout.HorizontalScope())
-                {
-                    EditorGUILayout.LabelField("Objeto selecionado", EditorStyles.boldLabel, GUILayout.Width(125));
-                    using (new EditorGUI.DisabledScope(true))
-                        EditorGUILayout.ObjectField(target, typeof(GameObject), true);
-                }
-                if (existingHolder != null)
-                {
-                    EditorGUILayout.HelpBox(existingHolder == target
-                        ? "Esse objeto já é um pivô, os botões abaixo vão reposicioná-lo."
-                        : $"Esse objeto está dentro do pivô '{existingHolder.name}', os botões abaixo vão reposicionar esse pivô.",
-                        MessageType.None);
-
-                    if (GUILayout.Button("Reverter pivô (volta ao pivô original do modelo)"))
-                    {
-                        RevertPivot(existingHolder);
-                        GUIUtility.ExitGUI();
-                    }
-                }
-
-                EditorGUILayout.Space();
-                using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
-                {
-                    EditorGUILayout.LabelField("Editar pivô", IsaDo3DStyles.Title);
-                    EditorGUILayout.LabelField("Faz edições no pivô do objeto só nessa instância e nessa cena.", EditorStyles.wordWrappedMiniLabel);
-                    EditorGUILayout.Space(4);
-
-                    EditorGUILayout.LabelField("Automático", EditorStyles.boldLabel);
-                    using (new EditorGUILayout.HorizontalScope())
-                    {
-                        if (GUILayout.Button("Centro")) ApplyPivot(target, PivotFromPreset(target, PivotPreset.Center));
-                        if (GUILayout.Button("Base")) ApplyPivot(target, PivotFromPreset(target, PivotPreset.Bottom));
-                        if (GUILayout.Button("Topo")) ApplyPivot(target, PivotFromPreset(target, PivotPreset.Top));
-                    }
-
-                    EditorGUILayout.Space();
-                    EditorGUILayout.LabelField("Manual", EditorStyles.boldLabel);
-                    _customModeActive = EditorGUILayout.Toggle("Ativar modo editável", _customModeActive);
-                    if (_customModeActive)
-                    {
-                        EditorGUILayout.LabelField("Posição: " + _customPivot.ToString("F3"));
-
-                        _vertexSnapActive = EditorGUILayout.Toggle("Grudar no vértice", _vertexSnapActive);
-                        if (_vertexSnapActive)
-                            EditorGUILayout.HelpBox("Ctrl+Clique num ponto do modelo pra grudar no vértice mais próximo.", MessageType.None);
-
-                        if (GUILayout.Button("Aplicar"))
-                        {
-                            ApplyPivot(target, _customPivot);
-                            _customModeActive = false;
-                            SceneView.RepaintAll();
-                        }
-                    }
-                }
-
-                EditorGUILayout.Space();
-                using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
-                {
-                    EditorGUILayout.LabelField("Encaixar objetos numa superfície", IsaDo3DStyles.Title);
-                    EditorGUILayout.Space(4);
-                    EditorGUILayout.LabelField(
-                        "Define uma superfície de referência, seleciona os objetos, e move eles (X/Z mantido) " +
-                        "até a altura do pivô da superfície.",
-                        EditorStyles.wordWrappedMiniLabel);
-
-                    using (new EditorGUILayout.HorizontalScope())
-                    {
-                        if (GUILayout.Button("Definir Superfície", GUILayout.Width(140)))
-                            _surfaceTarget = target;
-                        var newSurface = (GameObject)EditorGUILayout.ObjectField(_surfaceTarget, typeof(GameObject), true);
-                        if (newSurface != _surfaceTarget)
-                        {
-                            if (newSurface != null && !newSurface.scene.IsValid())
-                                Debug.LogWarning($"[Object Editor] '{newSurface.name}' é um asset do Project, não um objeto da cena. Arraste um objeto da Hierarchy.");
-                            else
-                                _surfaceTarget = newSurface;
-                        }
-                    }
-
-                    using (new EditorGUI.DisabledScope(_surfaceTarget == null))
-                    {
-                        if (GUILayout.Button($"Encaixar ({SnapCandidates().Length})"))
-                            SnapSelectedPivotsToSurface();
-                    }
-                }
+                _holderNote.text = existingHolder == target
+                    ? "This object is already a pivot."
+                    : $"Inside the pivot '{existingHolder.name}'.";
             }
+
+            _customToggle.SetValueWithoutNotify(_customModeActive);
+            SetVisible(_customFields, _customModeActive);
+            _snapToggle.SetValueWithoutNotify(_vertexSnapActive);
+            SetVisible(_snapNote, _vertexSnapActive);
+            RefreshPosition();
+
+            _surfaceField.SetValueWithoutNotify(_surfaceTarget);
+            _snapButton.text = $"Snap ({SnapCandidates().Length})";
+            _snapButton.SetEnabled(_surfaceTarget != null);
+        }
+
+        // Separado porque arrastar o gizmo chama isso a cada movimento
+        private void RefreshPosition()
+        {
+            if (_positionLabel != null) _positionLabel.text = "Position: " + _customPivot.ToString("F3");
         }
 
         private void OnSceneGUI(SceneView sceneView)
@@ -174,10 +286,10 @@ namespace IsaDo3D.EnvironmentArt
             if (EditorGUI.EndChangeCheck())
             {
                 _customPivot = newPos;
-                Repaint();
+                RefreshPosition();
             }
 
-            Handles.Label(_customPivot, "Novo pivô");
+            Handles.Label(_customPivot, "New pivot");
         }
 
         private void HandleVertexSnapClick(GameObject target)
@@ -192,7 +304,7 @@ namespace IsaDo3D.EnvironmentArt
             if (!TryFindNearestVertex(target, e.mousePosition, out var worldVertex)) return;
 
             _customPivot = worldVertex;
-            Repaint();
+            RefreshPosition();
         }
 
         private static bool TryFindNearestVertex(GameObject target, Vector2 mouseScreenPos, out Vector3 worldVertex)
@@ -278,25 +390,25 @@ namespace IsaDo3D.EnvironmentArt
             var toSnap = SnapCandidates();
             if (toSnap.Length == 0)
             {
-                EditorUtility.DisplayDialog("Encaixar na Superfície", "Selecione um ou mais objetos pra mover.", "OK");
+                EditorUtility.DisplayDialog("Snap to Surface", "Select one or more objects to move.", "OK");
                 return;
             }
 
-            Undo.SetCurrentGroupName("Encaixar Objetos na Superfície");
+            Undo.SetCurrentGroupName("Snap Objects to Surface");
             int undoGroup = Undo.GetCurrentGroup();
 
             float surfaceY = _surfaceTarget.transform.position.y;
 
             foreach (var obj in toSnap)
             {
-                Undo.RecordObject(obj.transform, "Mover objeto para a superfície");
+                Undo.RecordObject(obj.transform, "Move object to surface");
                 var current = obj.transform.position;
                 obj.transform.position = new Vector3(current.x, surfaceY, current.z);
                 EditorSceneManager.MarkSceneDirty(obj.scene);
             }
 
             Undo.CollapseUndoOperations(undoGroup);
-            Debug.Log($"[Object Editor] {toSnap.Length} objeto(s) movido(s) pra altura de '{_surfaceTarget.name}' (Y={surfaceY:F3}).");
+            Debug.Log($"[Object Editor] Moved {toSnap.Length} object(s) to the height of '{_surfaceTarget.name}' (Y={surfaceY:F3}).");
         }
 
         private static void ApplyPivot(GameObject target, Vector3 worldPivot)
@@ -309,12 +421,12 @@ namespace IsaDo3D.EnvironmentArt
                 && !PrefabUtility.IsOutermostPrefabInstanceRoot(target))
             {
                 EditorUtility.DisplayDialog("Object Editor",
-                    $"'{target.name}' está dentro de um prefab. Selecione a raiz da instância ou edite o pivô dentro do prefab.",
+                    $"'{target.name}' is inside a prefab. Select the instance root or edit the pivot inside the prefab.",
                     "OK");
                 return;
             }
 
-            Undo.SetCurrentGroupName("Reposicionar Pivô");
+            Undo.SetCurrentGroupName("Reposition Pivot");
             int undoGroup = Undo.GetCurrentGroup();
 
             GameObject pivotHolder = existingHolder != null
@@ -346,7 +458,7 @@ namespace IsaDo3D.EnvironmentArt
 
         private static void RevertPivot(GameObject pivotHolder)
         {
-            Undo.SetCurrentGroupName("Reverter Pivô");
+            Undo.SetCurrentGroupName("Revert Pivot");
             int undoGroup = Undo.GetCurrentGroup();
 
             var parent = pivotHolder.transform.parent;
@@ -359,7 +471,7 @@ namespace IsaDo3D.EnvironmentArt
                 var child = pivotHolder.transform.GetChild(0);
                 if (firstChild == null) firstChild = child.gameObject;
 
-                Undo.SetTransformParent(child, parent, "Destacar do pivô");
+                Undo.SetTransformParent(child, parent, "Detach from pivot");
                 child.SetSiblingIndex(siblingIndex++);
             }
 
@@ -370,14 +482,14 @@ namespace IsaDo3D.EnvironmentArt
             EditorSceneManager.MarkSceneDirty(scene);
             Undo.CollapseUndoOperations(undoGroup);
 
-            Debug.Log($"[Object Editor] Pivô de '{holderName}' revertido: holder removido, objeto de volta ao pivô original.");
+            Debug.Log($"[Object Editor] Reverted the pivot of '{holderName}': holder removed, object back on its original pivot.");
         }
 
         private static GameObject RepositionExistingPivot(GameObject pivotHolder, Vector3 worldPivot)
         {
             if (pivotHolder.transform.childCount == 0)
             {
-                Debug.LogWarning($"[Object Editor] '{pivotHolder.name}' está vazio, nada a reposicionar.");
+                Debug.LogWarning($"[Object Editor] '{pivotHolder.name}' is empty, nothing to reposition.");
                 return pivotHolder;
             }
 
@@ -386,13 +498,13 @@ namespace IsaDo3D.EnvironmentArt
             foreach (Transform child in pivotHolder.transform) children.Add(child);
 
             foreach (var child in children)
-                Undo.SetTransformParent(child, pivotHolder.transform.parent, "Destacar temporariamente do pivô");
-            Undo.RecordObject(pivotHolder.transform, "Mover pivô existente");
+                Undo.SetTransformParent(child, pivotHolder.transform.parent, "Detach from pivot temporarily");
+            Undo.RecordObject(pivotHolder.transform, "Move existing pivot");
             pivotHolder.transform.position = worldPivot;
             foreach (var child in children)
-                Undo.SetTransformParent(child, pivotHolder.transform, "Reencaixar no pivô");
+                Undo.SetTransformParent(child, pivotHolder.transform, "Reattach to pivot");
 
-            Debug.Log($"[Object Editor] '{pivotHolder.name}' reposicionado para {worldPivot:F3}.");
+            Debug.Log($"[Object Editor] Repositioned '{pivotHolder.name}' to {worldPivot:F3}.");
             return pivotHolder;
         }
 
@@ -404,18 +516,18 @@ namespace IsaDo3D.EnvironmentArt
             EnsureTagExists(PivotHolderTag);
 
             var pivotHolder = new GameObject(target.name + " [P]");
-            Undo.RegisterCreatedObjectUndo(pivotHolder, "Criar novo pivô");
+            Undo.RegisterCreatedObjectUndo(pivotHolder, "Create new pivot");
             pivotHolder.tag = PivotHolderTag;
 
             pivotHolder.transform.position = worldPivot;
             pivotHolder.transform.rotation = target.transform.rotation;
 
-            Undo.SetTransformParent(pivotHolder.transform, originalParent, "Posicionar novo pivô na hierarquia");
+            Undo.SetTransformParent(pivotHolder.transform, originalParent, "Place new pivot in the hierarchy");
             pivotHolder.transform.SetSiblingIndex(siblingIndex);
 
-            Undo.SetTransformParent(target.transform, pivotHolder.transform, "Mover objeto para o novo pivô");
+            Undo.SetTransformParent(target.transform, pivotHolder.transform, "Move object to the new pivot");
 
-            Debug.Log($"[Object Editor] Novo pivô criado para '{pivotHolder.name}' em {worldPivot:F3}.");
+            Debug.Log($"[Object Editor] Created a new pivot for '{pivotHolder.name}' at {worldPivot:F3}.");
             return pivotHolder;
         }
     }

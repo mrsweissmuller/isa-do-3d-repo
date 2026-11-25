@@ -29,13 +29,11 @@ namespace IsaDo3D.EnvironmentArt
             { "_EmissionMap", null }, { "_DetailAlbedoMap", null }, { "_DetailNormalMap", null }, { "_DetailMask", null },
         };
 
-        [MenuItem("Isa do 3D/Assets/Criar Material da Textura", true)]
-        [MenuItem("Assets/Criar Material da Textura", true)]
+        [MenuItem("Assets/Create Material from Texture", true)]
         private static bool CanCreateForSelection() =>
             IsaDo3DToolState.IsOn(ToolIds.TextureMaterial) && Selection.GetFiltered<Texture2D>(SelectionMode.Assets).Length > 0;
 
-        [MenuItem("Assets/Criar Material da Textura", false, 2000)]
-        [MenuItem("Isa do 3D/Assets/Criar Material da Textura")]
+        [MenuItem("Assets/Create Material from Texture", false, 2000)]
         private static void CreateForSelection()
         {
             int created = 0, existing = 0, refused = 0;
@@ -45,7 +43,7 @@ namespace IsaDo3D.EnvironmentArt
                 var refusal = RefusalFor(path);
                 if (refusal != null)
                 {
-                    Debug.LogWarning($"[Isa do 3D] {path}: sem material, {refusal}.", texture);
+                    Debug.LogWarning($"[Art Tools] {path}: no material, {refusal}.", texture);
                     ++refused;
                     continue;
                 }
@@ -53,17 +51,17 @@ namespace IsaDo3D.EnvironmentArt
                 else ++existing;
             }
             AssetDatabase.SaveAssets();
-            Debug.Log($"[Isa do 3D] Criar Material da Textura: {created} criado(s), {existing} que já existiam, {refused} recusado(s).");
+            Debug.Log($"[Art Tools] Create Material from Texture: {created} created, {existing} already existed, {refused} refused.");
         }
 
         // Null quando a textura pode ganhar material; senão, o motivo
         private static string RefusalFor(string path)
         {
-            if (!ProjectAssets.IsOurs(path)) return "é asset de terceiros ou de pacote";
-            if (TexturesFolderIndex(path.Split('/')) < 0) return "não está dentro de uma pasta chamada Textures";
+            if (!ProjectAssets.IsOurs(path)) return "it is a third-party or package asset";
+            if (TexturesFolderIndex(path.Split('/')) < 0) return "it is not inside a folder named Textures";
             var name = Path.GetFileNameWithoutExtension(path);
             foreach (var suffix in NonColorSuffixes)
-                if (name.EndsWith(suffix, System.StringComparison.Ordinal)) return $"o sufixo {suffix} é de mapa que não é cor";
+                if (name.EndsWith(suffix, System.StringComparison.Ordinal)) return $"the {suffix} suffix is for a non-color map";
             return null;
         }
 
@@ -103,7 +101,7 @@ namespace IsaDo3D.EnvironmentArt
             var already = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
             if (already != null)
             {
-                Debug.Log($"[Isa do 3D] {materialPath} já existe, não mexi nele.", already);
+                Debug.Log($"[Art Tools] {materialPath} already exists, left untouched.", already);
                 return false;
             }
             var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(texturePath);
@@ -113,7 +111,7 @@ namespace IsaDo3D.EnvironmentArt
             var shader = template != null ? template.shader : DefaultShader();
             if (shader == null)
             {
-                Debug.LogWarning($"[Isa do 3D] Sem shader padrão, {texturePath} ficou sem material.", texture);
+                Debug.LogWarning($"[Art Tools] No default shader, {texturePath} got no material.", texture);
                 return false;
             }
             var material = template != null ? new Material(template) : new Material(shader);
@@ -121,7 +119,7 @@ namespace IsaDo3D.EnvironmentArt
 
             var mainProperties = SetMainTexture(material, texture);
             if (mainProperties.Count == 0)
-                notes.Add($"o shader {shader.name} não tem textura principal que eu conheça: liga a textura à mão");
+                notes.Add($"shader {shader.name} has no main texture property this tool knows: assign the texture by hand");
 
             // Normal de mesmo nome ao lado da textura
             var normal = SiblingMap(texturePath, NormalSuffixes);
@@ -135,7 +133,7 @@ namespace IsaDo3D.EnvironmentArt
                     material.EnableKeyword("_NORMALMAP");
                     normalSet = true;
                 }
-                notes.Add(normalSet ? $"normal ligado: {normal.name}" : $"achei o normal {normal.name}, mas o shader não tem onde ligar");
+                notes.Add(normalSet ? $"normal assigned: {normal.name}" : $"found the normal {normal.name}, but the shader has no slot for it");
             }
 
             // O que veio do molde: mapa que é de uma textura só sai, o resto fica e é avisado
@@ -158,19 +156,19 @@ namespace IsaDo3D.EnvironmentArt
                     }
                     else kept.Add($"{property} ({inherited.name})");
                 }
-                if (removed.Count > 0) notes.Add($"tirei do molde: {string.Join(", ", removed)}");
-                if (kept.Count > 0) notes.Add($"continuam as do molde: {string.Join(", ", kept)}");
+                if (removed.Count > 0) notes.Add($"removed from the template: {string.Join(", ", removed)}");
+                if (kept.Count > 0) notes.Add($"kept from the template: {string.Join(", ", kept)}");
             }
 
             // Outros mapas de mesmo nome que eu não sei em qual propriedade do shader entram
             foreach (var other in OtherSiblingMaps(texturePath))
-                notes.Add($"achei {other}, não liguei: confere se entra neste material");
+                notes.Add($"found {other}, not assigned: check whether it belongs in this material");
 
             ProjectAssets.EnsureFolder(Path.GetDirectoryName(materialPath).Replace('\\', '/'));
             AssetDatabase.CreateAsset(material, materialPath);
 
-            var source = template != null ? $"cópia de {template.name} (shader, cor e tiling vêm dele)" : $"shader {shader.name}";
-            var message = $"[Isa do 3D] {materialPath} criado, {source}.";
+            var source = template != null ? $"copy of {template.name} (shader, color and tiling come from it)" : $"shader {shader.name}";
+            var message = $"[Art Tools] Created {materialPath}, {source}.";
             if (notes.Count > 0) message += "\n  - " + string.Join("\n  - ", notes);
             if (mainProperties.Count == 0) Debug.LogWarning(message, material);
             else Debug.Log(message, material);

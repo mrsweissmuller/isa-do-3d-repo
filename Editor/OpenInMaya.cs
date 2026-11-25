@@ -20,26 +20,24 @@ namespace IsaDo3D.EnvironmentArt
             ScriptPathArgumentFormat = "-script \"{0}\"",
         };
 
-        [MenuItem("Isa do 3D/Maya/Configurar Caminho do Maya...")]
+        internal static string SavedPath => EditorPrefs.GetString(MayaPathPrefKey, "");
+
         public static void ConfigureMayaPath()
         {
             DccLauncher.ConfigurePath(Maya);
         }
 
-        [MenuItem("Isa do 3D/Maya/Configurar Caminho do Maya...", true)]
-        [MenuItem("Isa do 3D/Maya/Abrir Selecionado no Maya", true)]
         private static bool IsOn() => IsaDo3DToolState.IsOn(ToolIds.Maya);
 
-        [MenuItem("Assets/Abrir no Maya", true)]
-        [MenuItem("GameObject/Abrir no Maya", true)]
+        [MenuItem("Assets/Open in Maya", true)]
+        [MenuItem("GameObject/Open in Maya", true)]
         private static bool ValidateOpen()
         {
             return IsOn() && DccLauncher.CanOpenSelection(Maya);
         }
 
-        [MenuItem("Assets/Abrir no Maya")]
-        [MenuItem("GameObject/Abrir no Maya", false, 0)]
-        [MenuItem("Isa do 3D/Maya/Abrir Selecionado no Maya")]
+        [MenuItem("Assets/Open in Maya")]
+        [MenuItem("GameObject/Open in Maya", false, 0)]
         public static void OpenSelected()
         {
             DccLauncher.OpenSelectedMesh(Maya);

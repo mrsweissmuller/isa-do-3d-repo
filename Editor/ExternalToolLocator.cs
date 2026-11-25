@@ -12,11 +12,11 @@ namespace IsaDo3D.EnvironmentArt
         public static void ConfigurePath(string prefKey, string logPrefix, string toolName, string exeFileName, string defaultRoot)
         {
             var current = EditorPrefs.GetString(prefKey, "");
-            var path = EditorUtility.OpenFilePanel($"Selecione {exeFileName}", string.IsNullOrEmpty(current) ? defaultRoot : Path.GetDirectoryName(current), "exe");
+            var path = EditorUtility.OpenFilePanel($"Select {exeFileName}", string.IsNullOrEmpty(current) ? defaultRoot : Path.GetDirectoryName(current), "exe");
             if (string.IsNullOrEmpty(path)) return;
 
             EditorPrefs.SetString(prefKey, path);
-            Debug.Log($"{logPrefix} Caminho do {toolName} salvo: {path}");
+            Debug.Log($"{logPrefix} {toolName} path saved: {path}");
         }
 
         public static string GetOrPromptPath(string prefKey, string logPrefix, string toolName, string exeFileName, string defaultRoot, Func<string> autoDetect)
@@ -28,12 +28,12 @@ namespace IsaDo3D.EnvironmentArt
             if (!string.IsNullOrEmpty(detected))
             {
                 EditorPrefs.SetString(prefKey, detected);
-                Debug.Log($"{logPrefix} {toolName} detectado automaticamente em: {detected}");
+                Debug.Log($"{logPrefix} {toolName} detected automatically at: {detected}");
                 return detected;
             }
 
-            EditorUtility.DisplayDialog($"Abrir no {toolName}", $"Não encontrei o {toolName} automaticamente. Selecione o executável ({exeFileName}) na próxima janela.", "OK");
-            var path = EditorUtility.OpenFilePanel($"Selecione {exeFileName}", defaultRoot, "exe");
+            EditorUtility.DisplayDialog($"Open in {toolName}", $"Could not find {toolName} automatically. Select the executable ({exeFileName}) in the next window.", "OK");
+            var path = EditorUtility.OpenFilePanel($"Select {exeFileName}", defaultRoot, "exe");
             if (string.IsNullOrEmpty(path)) return null;
 
             EditorPrefs.SetString(prefKey, path);

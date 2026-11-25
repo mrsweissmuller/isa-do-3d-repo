@@ -1,7 +1,10 @@
 using System.Collections.Generic;
 using UnityEditor;
 using UnityEditor.SceneManagement;
+using UnityEditor.UIElements;
 using UnityEngine;
+using UnityEngine.UIElements;
+using static IsaDo3D.EnvironmentArt.IsaDo3DStyles;
 
 namespace IsaDo3D.EnvironmentArt
 {
@@ -22,47 +25,78 @@ namespace IsaDo3D.EnvironmentArt
             return SceneSelection;
         }
 
-        [MenuItem("Isa do 3D/Cena/Material Batch", true)]
+        [MenuItem("Art Tools/Material Batch", true)]
         private static bool IsOn() => IsaDo3DToolState.IsOn(ToolIds.MaterialBatch);
 
-        [MenuItem("Isa do 3D/Cena/Material Batch")]
+        [MenuItem("Art Tools/Material Batch", false, 1)]
         public static void Open()
         {
             GetWindow<MaterialBatchTool>("Material Batch");
         }
 
+        private IntegerField _slotField;
+        private Button _applyButton;
+
         // Por causa da contagem no botão
         private void OnSelectionChange()
         {
-            Repaint();
+            Refresh();
         }
 
-        private void OnGUI()
+        private void CreateGUI()
         {
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            minSize = new Vector2(300f, 190f);
+
+            var page = Page(rootVisualElement);
+            page.Add(Header("Material Batch"));
+
+            var card = Card("Material");
+
+            var material = new ObjectField("Material")
             {
-                EditorGUILayout.LabelField("Material Batch", IsaDo3DStyles.Title);
-                EditorGUILayout.Space(4);
-                EditorGUILayout.LabelField(
-                    "Aplica um material a todos os objetos selecionados.",
-                    EditorStyles.wordWrappedMiniLabel);
+                objectType = typeof(Material),
+                allowSceneObjects = false,
+                value = _material,
+            };
+            material.RegisterValueChangedCallback(e =>
+            {
+                _material = e.newValue as Material;
+                Refresh();
+            });
+            card.Add(material);
 
-                _material = (Material)EditorGUILayout.ObjectField("Material", _material, typeof(Material), false);
+            var allSlots = new Toggle("Apply to all slots") { value = _allSlots };
+            allSlots.RegisterValueChangedCallback(e =>
+            {
+                _allSlots = e.newValue;
+                Refresh();
+            });
+            card.Add(allSlots);
 
-                _allSlots = EditorGUILayout.Toggle("Aplicar em todos os slots", _allSlots);
-                using (new EditorGUI.DisabledScope(_allSlots))
-                {
-                    _slotIndex = Mathf.Max(0, EditorGUILayout.IntField("Slot (índice)", _slotIndex));
-                }
+            _slotField = new IntegerField("Slot (index)") { value = _slotIndex };
+            _slotField.RegisterValueChangedCallback(e =>
+            {
+                _slotIndex = Mathf.Max(0, e.newValue);
+                _slotField.SetValueWithoutNotify(_slotIndex);
+            });
+            card.Add(_slotField);
 
-                var selected = SelectedInScene();
+            _applyButton = FlatButton("", true, () => ApplyToSelection(SelectedInScene()));
+            _applyButton.style.marginTop = 8f;
+            card.Add(_applyButton);
 
-                using (new EditorGUI.DisabledScope(_material == null || selected.Count == 0))
-                {
-                    if (GUILayout.Button($"Aplicar aos Selecionados ({selected.Count})"))
-                        ApplyToSelection(selected);
-                }
-            }
+            page.Add(card);
+            Refresh();
+        }
+
+        private void Refresh()
+        {
+            if (_applyButton == null) return;
+
+            int selected = SelectedInScene().Count;
+            _slotField.SetEnabled(!_allSlots);
+            _applyButton.text = $"Apply to selected ({selected})";
+            _applyButton.SetEnabled(_material != null && selected > 0);
         }
 
         private void ApplyToSelection(List<GameObject> selected)
@@ -84,8 +118,8 @@ namespace IsaDo3D.EnvironmentArt
 
             Undo.CollapseUndoOperations(undoGroup);
 
-            var summary = $"[Material Batch] Material '{_material.name}' aplicado em {changed} renderer(s).";
-            if (skippedNoSlot > 0) summary += $" {skippedNoSlot} renderer(s) pulado(s) por não ter o slot {_slotIndex}.";
+            var summary = $"[Material Batch] Applied material '{_material.name}' to {changed} renderer(s).";
+            if (skippedNoSlot > 0) summary += $" Skipped {skippedNoSlot} renderer(s) with no slot {_slotIndex}.";
             Debug.Log(summary);
         }
 
@@ -108,7 +142,7 @@ namespace IsaDo3D.EnvironmentArt
                 mats[_slotIndex] = _material;
             }
 
-            Undo.RecordObject(renderer, "Trocar material");
+            Undo.RecordObject(renderer, "Change material");
             renderer.sharedMaterials = mats;
             EditorSceneManager.MarkSceneDirty(renderer.gameObject.scene);
             changed++;

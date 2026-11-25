@@ -36,8 +36,8 @@ namespace IsaDo3D.EnvironmentArt
             if (!MeshAssetResolver.TryResolveMeshAssetPath(Selection.activeObject, dcc.ModelExtensions, out var meshAssetPath, out var sourceDescription))
             {
                 EditorUtility.DisplayDialog(
-                    $"Abrir no {dcc.ToolName}",
-                    "Selecione um prefab, GameObject ou mesh que tenha uma malha (MeshFilter/SkinnedMeshRenderer) associada.",
+                    $"Open in {dcc.ToolName}",
+                    "Select a prefab, GameObject or mesh that has a mesh (MeshFilter/SkinnedMeshRenderer) on it.",
                     "OK");
                 return;
             }
@@ -48,7 +48,7 @@ namespace IsaDo3D.EnvironmentArt
             var absoluteMeshPath = AssetPaths.Absolute(meshAssetPath);
             if (!File.Exists(absoluteMeshPath))
             {
-                Debug.LogError($"{dcc.LogPrefix} Arquivo não encontrado no disco: {absoluteMeshPath}");
+                Debug.LogError($"{dcc.LogPrefix} File not found on disk: {absoluteMeshPath}");
                 return;
             }
 
@@ -65,11 +65,11 @@ namespace IsaDo3D.EnvironmentArt
             try
             {
                 Process.Start(psi);
-                Debug.Log($"{dcc.LogPrefix} Abrindo '{sourceDescription}' ({absoluteMeshPath}) no {dcc.ToolName}.");
+                Debug.Log($"{dcc.LogPrefix} Opening '{sourceDescription}' ({absoluteMeshPath}) in {dcc.ToolName}.");
             }
             catch (Exception e) when (e is Win32Exception || e is FileNotFoundException)
             {
-                Debug.LogError($"{dcc.LogPrefix} Falha ao iniciar o {dcc.ToolName} em '{exePath}': {e.Message}");
+                Debug.LogError($"{dcc.LogPrefix} Failed to start {dcc.ToolName} at '{exePath}': {e.Message}");
             }
         }
 

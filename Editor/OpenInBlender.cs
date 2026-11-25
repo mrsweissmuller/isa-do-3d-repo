@@ -30,27 +30,29 @@ namespace IsaDo3D.EnvironmentArt
             ScriptPathArgumentFormat = "--python \"{0}\"",
         };
 
-        [MenuItem("Isa do 3D/Blender/Configurar Caminho do Blender...")]
+        // Pra janela de Settings mostrar o que está salvo
+        internal static string SavedPath => EditorPrefs.GetString(BlenderPathPrefKey, "");
+        internal static string BatexExportFolder => EditorPrefs.GetString(BatexExportFolderPrefKey, "");
+
         public static void ConfigureBlenderPath()
         {
             DccLauncher.ConfigurePath(Blender);
         }
 
-        [MenuItem("Isa do 3D/Blender/Configurar Pasta de Exportação do Batex...")]
         public static void ConfigureBatexExportFolder()
         {
             var current = EditorPrefs.GetString(BatexExportFolderPrefKey, "");
-            var exportPath = EditorUtility.OpenFolderPanel("Selecione a pasta de exportação do Batex", string.IsNullOrEmpty(current) ? Application.dataPath : current, "");
+            var exportPath = EditorUtility.OpenFolderPanel("Select the Batex export folder", string.IsNullOrEmpty(current) ? Application.dataPath : current, "");
             if (string.IsNullOrEmpty(exportPath)) return;
 
             bool confirmed = EditorUtility.DisplayDialog(
-                "Configurar Batex",
-                "Isso vai abrir o Blender em segundo plano, definir a pasta de exportação do addon Batex para:\n\n" +
+                "Set up Batex",
+                "This will open Blender in the background, set the Batex add-on's export folder to:\n\n" +
                 exportPath +
-                "\n\ne salvar como arquivo de inicialização padrão do Blender (sobrescreve o startup.blend atual, " +
-                "mas preserva o resto do que já está nele). Precisa que o addon Batex já esteja habilitado " +
-                "no seu Blender. Continuar?",
-                "Sim, configurar", "Cancelar");
+                "\n\nand save it as Blender's default startup file (overwrites the current startup.blend, " +
+                "but keeps everything else already in it). The Batex add-on must already be enabled " +
+                "in your Blender. Continue?",
+                "Yes, set it up", "Cancel");
             if (!confirmed) return;
 
             EditorPrefs.SetString(BatexExportFolderPrefKey, exportPath);
@@ -64,26 +66,25 @@ namespace IsaDo3D.EnvironmentArt
                 "if hasattr(bpy.context.scene, 'export_folder'):\n" +
                 "    bpy.context.scene.export_folder = target_path\n" +
                 "    bpy.ops.wm.save_homefile()\n" +
-                "    print('[IsaDo3D] OK: export_folder configurado para ' + target_path + ' e salvo como startup padrao.')\n" +
+                "    print('[IsaDo3D] OK: export_folder set to ' + target_path + ' and saved as the default startup.')\n" +
                 "else:\n" +
-                "    print('[IsaDo3D] ERRO: propriedade export_folder nao existe nessa sessao. ' +\n" +
-                "          'Habilite o addon Batex em Edit > Preferences > Add-ons e rode essa configuracao de novo.')\n";
+                "    print('[IsaDo3D] ERROR: the export_folder property does not exist in this session. ' +\n" +
+                "          'Enable the Batex add-on in Edit > Preferences > Add-ons and run this setup again.')\n";
 
             var scriptPath = TempScriptFile.Write("configure_batex", ".py", script);
 
-            RunBackgroundScript(blenderPath, scriptPath, "Configurando Batex", (output, errorOutput) =>
+            RunBackgroundScript(blenderPath, scriptPath, "Setting up Batex", (output, errorOutput) =>
             {
-                if (!string.IsNullOrEmpty(output)) Debug.Log($"[Blender] Saída do Blender:\n{output}");
+                if (!string.IsNullOrEmpty(output)) Debug.Log($"[Blender] Blender output:\n{output}");
                 if (!string.IsNullOrEmpty(errorOutput)) Debug.LogWarning($"[Blender] Blender stderr:\n{errorOutput}");
 
                 if (output.Contains("[IsaDo3D] OK"))
-                    Debug.Log("[Blender] Pasta de exportação do Batex configurada com sucesso.");
+                    Debug.Log("[Blender] Batex export folder set.");
                 else
-                    Debug.LogWarning("[Blender] Não consegui confirmar sucesso pela saída, confira o log acima.");
+                    Debug.LogWarning("[Blender] Could not confirm success from the output, check the log above.");
             });
         }
 
-        [MenuItem("Isa do 3D/Blender/Instalar Krita Bridge (addon)...")]
         public static void InstallKritaBridgeAddon()
         {
             // Em pacote do git ou file: o Packages/ não existe no disco
@@ -94,15 +95,15 @@ namespace IsaDo3D.EnvironmentArt
 
             if (!File.Exists(addonAbsolutePath))
             {
-                Debug.LogError($"[Blender] Addon não encontrado em: {addonAbsolutePath}");
+                Debug.LogError($"[Blender] Add-on not found at: {addonAbsolutePath}");
                 return;
             }
 
             bool confirmed = EditorUtility.DisplayDialog(
-                "Instalar Krita Bridge",
-                "Isso vai instalar/atualizar o addon 'Isa do 3D - Krita Bridge' no seu Blender e habilitá-lo " +
-                "(sobrescreve uma versão anterior do mesmo addon se já existir, sem afetar outros addons). Continuar?",
-                "Sim, instalar", "Cancelar");
+                "Install Krita Bridge",
+                "This will install or update the 'Isa do 3D - Krita Bridge' add-on in your Blender and enable it " +
+                "(overwrites an earlier version of the same add-on if there is one, without touching other add-ons). Continue?",
+                "Yes, install", "Cancel");
             if (!confirmed) return;
 
             var blenderPath = DccLauncher.GetOrPromptPath(Blender);
@@ -115,40 +116,35 @@ namespace IsaDo3D.EnvironmentArt
                 "    bpy.ops.preferences.addon_install(filepath=addon_path, overwrite=True)\n" +
                 "    bpy.ops.preferences.addon_enable(module='isado3d_krita_bridge')\n" +
                 "    bpy.ops.wm.save_userpref()\n" +
-                "    print('[IsaDo3D] OK: addon Krita Bridge instalado e habilitado.')\n" +
+                "    print('[IsaDo3D] OK: Krita Bridge add-on installed and enabled.')\n" +
                 "except Exception as e:\n" +
-                "    print('[IsaDo3D] ERRO: ' + str(e))\n";
+                "    print('[IsaDo3D] ERROR: ' + str(e))\n";
 
             var scriptPath = TempScriptFile.Write("install_krita_bridge", ".py", script);
 
-            RunBackgroundScript(blenderPath, scriptPath, "Instalando Krita Bridge", (output, errorOutput) =>
+            RunBackgroundScript(blenderPath, scriptPath, "Installing Krita Bridge", (output, errorOutput) =>
             {
-                if (!string.IsNullOrEmpty(output)) Debug.Log($"[Blender] Saída do Blender:\n{output}");
+                if (!string.IsNullOrEmpty(output)) Debug.Log($"[Blender] Blender output:\n{output}");
                 if (!string.IsNullOrEmpty(errorOutput)) Debug.LogWarning($"[Blender] Blender stderr:\n{errorOutput}");
 
                 if (output.Contains("[IsaDo3D] OK"))
-                    Debug.Log("[Blender] Addon Krita Bridge instalado com sucesso. Configure o caminho do Krita em Edit > Preferences > Add-ons > Isa do 3D - Krita Bridge se ele não detectar sozinho.");
+                    Debug.Log("[Blender] Krita Bridge add-on installed. Set the Krita path in Edit > Preferences > Add-ons > Isa do 3D - Krita Bridge if it is not detected automatically.");
                 else
-                    Debug.LogWarning("[Blender] Não consegui confirmar sucesso pela saída, confira o log acima.");
+                    Debug.LogWarning("[Blender] Could not confirm success from the output, check the log above.");
             });
         }
 
-        [MenuItem("Isa do 3D/Blender/Configurar Caminho do Blender...", true)]
-        [MenuItem("Isa do 3D/Blender/Configurar Pasta de Exportação do Batex...", true)]
-        [MenuItem("Isa do 3D/Blender/Instalar Krita Bridge (addon)...", true)]
-        [MenuItem("Isa do 3D/Blender/Abrir Selecionado no Blender", true)]
         private static bool IsOn() => IsaDo3DToolState.IsOn(ToolIds.Blender);
 
-        [MenuItem("Assets/Abrir no Blender", true)]
-        [MenuItem("GameObject/Abrir no Blender", true)]
+        [MenuItem("Assets/Open in Blender", true)]
+        [MenuItem("GameObject/Open in Blender", true)]
         private static bool ValidateOpen()
         {
             return IsOn() && DccLauncher.CanOpenSelection(Blender);
         }
 
-        [MenuItem("Assets/Abrir no Blender")]
-        [MenuItem("GameObject/Abrir no Blender", false, 0)]
-        [MenuItem("Isa do 3D/Blender/Abrir Selecionado no Blender")]
+        [MenuItem("Assets/Open in Blender")]
+        [MenuItem("GameObject/Open in Blender", false, 0)]
         public static void OpenSelected()
         {
             DccLauncher.OpenSelectedMesh(Blender);
@@ -174,7 +170,7 @@ namespace IsaDo3D.EnvironmentArt
             }
             catch (Exception e) when (e is Win32Exception || e is FileNotFoundException)
             {
-                Debug.LogError($"[Blender] Falha ao iniciar o Blender em '{blenderPath}': {e.Message}");
+                Debug.LogError($"[Blender] Failed to start Blender at '{blenderPath}': {e.Message}");
                 return;
             }
 
@@ -194,7 +190,7 @@ namespace IsaDo3D.EnvironmentArt
                 double elapsed = EditorApplication.timeSinceStartup - startTime;
                 bool timedOut = elapsed > timeoutSeconds;
                 bool cancelled = EditorUtility.DisplayCancelableProgressBar(
-                    progressTitle, "Aguardando o Blender em segundo plano...", (float)(elapsed / timeoutSeconds));
+                    progressTitle, "Waiting for Blender in the background...", (float)(elapsed / timeoutSeconds));
 
                 if (!exited && !timedOut && !cancelled) return;
 
@@ -208,12 +204,12 @@ namespace IsaDo3D.EnvironmentArt
                     catch (InvalidOperationException) { }
                     catch (Win32Exception e)
                     {
-                        Debug.LogError($"[Blender] Não consegui encerrar o Blender: {e.Message}");
+                        Debug.LogError($"[Blender] Could not stop Blender: {e.Message}");
                     }
 
                     Debug.LogWarning(cancelled
-                        ? "[Blender] Cancelado, o processo do Blender foi encerrado."
-                        : "[Blender] O Blender não respondeu em 30s, processo encerrado.");
+                        ? "[Blender] Cancelled, the Blender process was stopped."
+                        : "[Blender] Blender did not respond in 30s, process stopped.");
                 }
 
                 process.Dispose();
@@ -293,7 +289,7 @@ def _apply_textures():
         try:
             image = bpy.data.images.load(path, check_existing=True)
         except RuntimeError as e:
-            print('[IsaDo3D] Nao consegui carregar a textura ' + path + ': ' + str(e))
+            print('[IsaDo3D] Could not load the texture ' + path + ': ' + str(e))
             continue
         if existing is not None:
             existing.image = image
@@ -303,7 +299,7 @@ def _apply_textures():
             node.location = (bsdf.location.x - 400, bsdf.location.y)
             tree.links.new(node.outputs['Color'], base_color)
         applied += 1
-        print('[IsaDo3D] Textura aplicada em ' + mat.name + ': ' + path)
+        print('[IsaDo3D] Texture applied to ' + mat.name + ': ' + path)
     return applied
 
 def _view3d_spaces():
@@ -372,7 +368,7 @@ def _relink_missing_images():
         image.filepath = found[0].replace('\\', '/')
         image.reload()
         fixed += 1
-        print('[IsaDo3D] Textura reencontrada pelo nome: ' + found[0])
+        print('[IsaDo3D] Texture found again by name: ' + found[0])
     return fixed
 
 _apply_textures()
@@ -381,7 +377,7 @@ _activate_base_color_images()
 try:
     _apply_viewport_shading()
 except Exception as e:
-    print('[IsaDo3D] Nao consegui ajustar o viewport: ' + str(e))
+    print('[IsaDo3D] Could not set up the viewport: ' + str(e))
 ";
 
         private static string TextureScript(string absoluteMeshPath)
@@ -427,7 +423,7 @@ except Exception as e:
                 var absoluteTexture = AssetPaths.Absolute(texturePath);
                 if (!BlenderImageExtensions.Contains(ext) || !File.Exists(absoluteTexture))
                 {
-                    Debug.LogWarning($"[Blender] Textura '{texturePath}' do material '{entry.Value.name}' não pode ser aberta no Blender (formato ou arquivo).");
+                    Debug.LogWarning($"[Blender] Texture '{texturePath}' of material '{entry.Value.name}' cannot be opened in Blender (format or file).");
                     continue;
                 }
                 result[entry.Key] = absoluteTexture;

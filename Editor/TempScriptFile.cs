@@ -52,7 +52,7 @@ namespace IsaDo3D.EnvironmentArt
             }
 
             if (stuck > 0)
-                UnityEngine.Debug.LogWarning($"[Isa do 3D] {stuck} script(s) temporário(s) em uso há mais de 1h em {Path.GetTempPath()}, ficam pra próxima.");
+                UnityEngine.Debug.LogWarning($"[Art Tools] {stuck} temporary script(s) in {Path.GetTempPath()} have been in use for over 1h, left for next time.");
         }
     }
 }
