@@ -17,7 +17,11 @@ namespace IsaDo3D.EnvironmentArt
         // Teto do que a janela pode ter de borda, pro ajuste de altura nunca crescer sem parar
         private const float MaxChrome = 60f;
 
-        // Os cartões, na ordem em que aparecem. São os mesmos nomes dos submenus
+        // Nos blocos de programa o caminho começa sempre na mesma coluna, na linha do toggle e nas de baixo
+        private const float NameColumn = 124f;
+        private const float ExtrasIndent = 21f;
+
+        // Os cartões, na ordem em que aparecem
         private const string SceneGroup = "Scene";
         private const string AssetsGroup = "Assets";
         private const string AppsGroup = "External apps";
@@ -32,22 +36,18 @@ namespace IsaDo3D.EnvironmentArt
             public string Title;
             public string ParentId;
             public Action Open;
-            public ChoiceOption[] Options;
-            public SetupEntry[] Setup = new SetupEntry[0];
+
+            // Programa de fora ganha um bloco só dele: o caminho na linha do toggle e os extras embaixo
+            public SetupEntry App;
+            public int AccentHex;
+            public string ExtrasTitle;
+            public SetupEntry[] Extras = new SetupEntry[0];
         }
 
-        private class ChoiceOption
-        {
-            public string Label;
-            public string[] Ids;
-        }
-
-        // Configuração de um programa de fora, só aparece com a ferramenta dele ligada
+        // Uma coisa a configurar num programa de fora, só aparece com a ferramenta dele ligada
         private class SetupEntry
         {
-            public string ToolId;
             public string Name;
-            public bool Indented;
 
             // Sem caminho a linha mostra só o Hint, com caminho o Hint vira a dica de quando ele não está salvo
             public Func<string> GetPath;
@@ -65,8 +65,17 @@ namespace IsaDo3D.EnvironmentArt
         private class SetupView
         {
             public SetupEntry Entry;
+            public string ToolId;
             public VisualElement Row;
             public Label Status;
+        }
+
+        private class TileView
+        {
+            public ToolEntry Tool;
+            public VisualElement Accent;
+            public VisualElement Extras;
+            public readonly List<SetupView> ExtraRows = new List<SetupView>();
         }
 
         private static readonly ToolEntry[] Tools =
@@ -95,58 +104,52 @@ namespace IsaDo3D.EnvironmentArt
 
             new ToolEntry
             {
-                Group = AppsGroup,
-                Title = "3D software",
-                Options = new[]
+                Group = AppsGroup, Id = ToolIds.Blender, Title = "Blender", AccentHex = 0xBB7723,
+                App = new SetupEntry
                 {
-                    new ChoiceOption { Label = "None", Ids = new string[0] },
-                    new ChoiceOption { Label = "Blender", Ids = new[] { ToolIds.Blender } },
-                    new ChoiceOption { Label = "Maya", Ids = new[] { ToolIds.Maya } },
-                    new ChoiceOption { Label = "Both", Ids = new[] { ToolIds.Blender, ToolIds.Maya } },
+                    GetPath = () => OpenInBlender.SavedPath, Hint = AutoDetectHint,
+                    Button = "Set path", Run = OpenInBlender.ConfigureBlenderPath,
                 },
-                Setup = new[]
+                ExtrasTitle = "Add-ons",
+                Extras = new[]
                 {
                     new SetupEntry
                     {
-                        ToolId = ToolIds.Blender, Name = "Blender",
-                        GetPath = () => OpenInBlender.SavedPath, Hint = AutoDetectHint,
-                        Button = "Set path", Run = OpenInBlender.ConfigureBlenderPath,
-                    },
-                    new SetupEntry
-                    {
-                        ToolId = ToolIds.Blender, Name = "Batex export", Indented = true,
+                        Name = "Batex export",
                         GetPath = () => OpenInBlender.BatexExportFolder, IsFolder = true,
                         Button = "Set folder", Run = OpenInBlender.ConfigureBatexExportFolder,
                     },
                     new SetupEntry
                     {
-                        ToolId = ToolIds.Blender, Name = "Krita Bridge", Indented = true,
-                        Hint = "Blender add-on",
+                        // Não dá pra saber daqui se já está instalado no Blender, então a linha não afirma nada
+                        Name = "Krita Bridge", Hint = "",
                         Button = "Install", Run = OpenInBlender.InstallKritaBridgeAddon,
-                    },
-                    new SetupEntry
-                    {
-                        ToolId = ToolIds.Maya, Name = "Maya",
-                        GetPath = () => OpenInMaya.SavedPath, Hint = AutoDetectHint,
-                        Button = "Set path", Run = OpenInMaya.ConfigureMayaPath,
                     },
                 },
             },
             new ToolEntry
             {
-                Group = AppsGroup, Id = ToolIds.ImageEditor, Title = "Open texture in image editor",
-                Setup = new[]
+                Group = AppsGroup, Id = ToolIds.Maya, Title = "Maya", AccentHex = 0x539BA5,
+                App = new SetupEntry
+                {
+                    GetPath = () => OpenInMaya.SavedPath, Hint = AutoDetectHint,
+                    Button = "Set path", Run = OpenInMaya.ConfigureMayaPath,
+                },
+            },
+            new ToolEntry
+            {
+                Group = AppsGroup, Id = ToolIds.ImageEditor, Title = "Image editor", AccentHex = 0x7137A5,
+                App = new SetupEntry
+                {
+                    GetPath = () => OpenInImageEditor.EditorPath,
+                    Hint = "Opens with the app Windows uses for the file. Same setting as Preferences > External Tools > Image application.",
+                    Button = "Set path", Run = OpenInImageEditor.ConfigureEditorPath,
+                },
+                Extras = new[]
                 {
                     new SetupEntry
                     {
-                        ToolId = ToolIds.ImageEditor, Name = "Image editor",
-                        GetPath = () => OpenInImageEditor.EditorPath,
-                        Hint = "Opens with the app Windows uses for the file. Same setting as Preferences > External Tools > Image application.",
-                        Button = "Set app", Run = OpenInImageEditor.ConfigureEditorPath,
-                    },
-                    new SetupEntry
-                    {
-                        ToolId = ToolIds.ImageEditor, Name = "Reload on save", Indented = true,
+                        Name = "Reload on save",
                         Visible = () => OpenInImageEditor.WatchedCount > 0,
                         GetText = () => $"Watching {OpenInImageEditor.WatchedCount} texture(s)",
                         Button = "Stop", Run = OpenInImageEditor.StopWatching,
@@ -162,8 +165,8 @@ namespace IsaDo3D.EnvironmentArt
         private VisualElement _body;
         private readonly Dictionary<ToolEntry, Toggle> _toggles = new Dictionary<ToolEntry, Toggle>();
         private readonly Dictionary<ToolEntry, Button> _openButtons = new Dictionary<ToolEntry, Button>();
-        private readonly Dictionary<ToolEntry, SegmentedBar> _bars = new Dictionary<ToolEntry, SegmentedBar>();
         private readonly List<SetupView> _setupRows = new List<SetupView>();
+        private readonly List<TileView> _tiles = new List<TileView>();
 
         [MenuItem("Art Tools/Settings...", false, -1000)]
         public static void Open()
@@ -197,7 +200,7 @@ namespace IsaDo3D.EnvironmentArt
             OpenInImageEditor.WatchListChanged -= Refresh;
         }
 
-        // O caminho de um programa também muda pelo menu, com a janela aberta
+        // O caminho de um programa também muda fora daqui, com a janela aberta
         private void OnFocus()
         {
             Refresh();
@@ -215,8 +218,8 @@ namespace IsaDo3D.EnvironmentArt
         {
             _toggles.Clear();
             _openButtons.Clear();
-            _bars.Clear();
             _setupRows.Clear();
+            _tiles.Clear();
 
             _page = Page(rootVisualElement);
 
@@ -259,24 +262,31 @@ namespace IsaDo3D.EnvironmentArt
             foreach (var tool in Tools)
             {
                 if (tool.Group != group) continue;
-
-                card.Add(tool.Options != null ? BuildChoice(tool) : BuildToggle(tool));
-                foreach (var setup in tool.Setup) card.Add(BuildSetupRow(setup));
+                card.Add(tool.App != null ? BuildTile(tool) : BuildToggleRow(tool));
             }
 
+            // O cartão já tem a própria margem embaixo
+            card[card.childCount - 1].style.marginBottom = 0f;
             return card;
         }
 
-        private VisualElement BuildToggle(ToolEntry tool)
+        private Toggle BuildToggle(ToolEntry tool)
+        {
+            var toggle = new Toggle { text = tool.Title };
+            toggle.RegisterValueChangedCallback(e => SetTool(tool, e.newValue));
+
+            _toggles[tool] = toggle;
+            return toggle;
+        }
+
+        private VisualElement BuildToggleRow(ToolEntry tool)
         {
             var row = Row();
             row.style.marginLeft = tool.ParentId != null ? 18f : 0f;
 
-            var toggle = new Toggle { text = tool.Title };
+            var toggle = BuildToggle(tool);
             toggle.style.flexGrow = 1f;
-            toggle.RegisterValueChangedCallback(e => SetTool(tool, e.newValue));
             row.Add(toggle);
-            _toggles[tool] = toggle;
 
             if (tool.Open != null)
             {
@@ -289,30 +299,83 @@ namespace IsaDo3D.EnvironmentArt
             return row;
         }
 
-        private VisualElement BuildChoice(ToolEntry tool)
+        // Um bloco por programa, com uma faixa da cor dele na esquerda que apaga quando está desligado
+        private VisualElement BuildTile(ToolEntry tool)
         {
-            var choice = new VisualElement();
-            choice.style.marginBottom = 4f;
-            choice.Add(Section(tool.Title));
+            var view = new TileView { Tool = tool };
 
-            var bar = new SegmentedBar(tool.Options.Select(o => o.Label).ToArray(), index => Choose(tool, index));
-            choice.Add(bar);
+            var tile = Row();
+            tile.style.alignItems = Align.Stretch;
+            tile.style.backgroundColor = InsetColor;
+            tile.style.marginBottom = 6f;
+            tile.style.overflow = Overflow.Hidden;
+            Radius(tile, 6f);
 
-            _bars[tool] = bar;
-            return choice;
+            view.Accent = new VisualElement();
+            view.Accent.style.width = 3f;
+            tile.Add(view.Accent);
+
+            var content = new VisualElement();
+            content.style.flexGrow = 1f;
+            content.style.flexBasis = 0f;
+            Padding(content, 6f, 8f);
+            tile.Add(content);
+
+            var header = Row();
+            var toggle = BuildToggle(tool);
+            toggle.style.width = NameColumn;
+            toggle.style.unityFontStyleAndWeight = FontStyle.Bold;
+            header.Add(toggle);
+
+            var app = BuildSetup(tool, tool.App);
+            app.Row.style.flexGrow = 1f;
+            app.Row.style.flexBasis = 0f;
+            header.Add(app.Row);
+            content.Add(header);
+
+            // Separados do caminho por uma linha, são do programa mas não são o programa
+            view.Extras = new VisualElement();
+            view.Extras.style.marginTop = 6f;
+            view.Extras.style.marginLeft = ExtrasIndent;
+            view.Extras.style.paddingTop = 4f;
+            view.Extras.style.borderTopWidth = 1f;
+            view.Extras.style.borderTopColor = CardBorder;
+
+            if (tool.ExtrasTitle != null)
+            {
+                var title = Section(tool.ExtrasTitle);
+                title.style.fontSize = 10f;
+                title.style.marginTop = 2f;
+                title.style.marginBottom = 0f;
+                view.Extras.Add(title);
+            }
+
+            foreach (var extra in tool.Extras)
+            {
+                var row = BuildSetup(tool, extra);
+                row.Row.style.marginTop = 4f;
+                view.Extras.Add(row.Row);
+                view.ExtraRows.Add(row);
+            }
+
+            content.Add(view.Extras);
+
+            _tiles.Add(view);
+            return tile;
         }
 
-        // Nome, o que está salvo e o botão que muda. A coluna do meio começa no mesmo lugar com ou sem recuo
-        private VisualElement BuildSetupRow(SetupEntry setup)
+        // Nome (se tiver), o que está salvo e o botão que muda
+        private SetupView BuildSetup(ToolEntry tool, SetupEntry setup)
         {
             var row = Row();
-            row.style.marginTop = 4f;
-            row.style.marginLeft = setup.Indented ? 18f : 3f;
 
-            var name = new Label(setup.Name);
-            name.style.color = TextColor;
-            name.style.width = setup.Indented ? 95f : 110f;
-            row.Add(name);
+            if (setup.Name != null)
+            {
+                var name = new Label(setup.Name);
+                name.style.color = TextColor;
+                name.style.width = NameColumn - ExtrasIndent;
+                row.Add(name);
+            }
 
             var status = Note("");
             status.style.flexGrow = 1f;
@@ -332,8 +395,9 @@ namespace IsaDo3D.EnvironmentArt
             button.style.marginLeft = 6f;
             row.Add(button);
 
-            _setupRows.Add(new SetupView { Entry = setup, Row = row, Status = status });
-            return row;
+            var view = new SetupView { Entry = setup, ToolId = tool.Id, Row = row, Status = status };
+            _setupRows.Add(view);
+            return view;
         }
 
         private static Button SmallButton(string text, Action onClick)
@@ -406,15 +470,24 @@ namespace IsaDo3D.EnvironmentArt
             foreach (var pair in _openButtons)
                 pair.Value.SetEnabled(state.Contains(pair.Key.Id));
 
-            foreach (var pair in _bars)
-                pair.Value.Select(SelectedOption(pair.Key, state));
-
             foreach (var view in _setupRows)
             {
-                bool on = state.Contains(view.Entry.ToolId) && (view.Entry.Visible == null || view.Entry.Visible());
-                SetVisible(view.Row, on);
-                if (on) RefreshStatus(view);
+                bool shown = IsShown(view, state);
+                SetVisible(view.Row, shown);
+                if (shown) RefreshStatus(view);
             }
+
+            foreach (var tile in _tiles)
+            {
+                bool on = state.Contains(tile.Tool.Id);
+                tile.Accent.style.backgroundColor = on ? Hex(tile.Tool.AccentHex) : CardBorder;
+                SetVisible(tile.Extras, on && tile.ExtraRows.Any(row => IsShown(row, state)));
+            }
+        }
+
+        private static bool IsShown(SetupView view, HashSet<string> state)
+        {
+            return state.Contains(view.ToolId) && (view.Entry.Visible == null || view.Entry.Visible());
         }
 
         private static void RefreshStatus(SetupView view)
@@ -464,25 +537,9 @@ namespace IsaDo3D.EnvironmentArt
             IsaDo3DToolState.SetEnabled(state);
         }
 
-        private void Choose(ToolEntry tool, int next)
-        {
-            var state = _state ??= LoadState();
-            if (next == SelectedOption(tool, state)) return;
-
-            foreach (var option in tool.Options)
-                foreach (var id in option.Ids)
-                    Disable(id, state);
-
-            foreach (var id in tool.Options[next].Ids)
-                state.Add(id);
-
-            IsaDo3DToolState.SetEnabled(state);
-        }
-
         private void EnableAll()
         {
-            var state = _state ??= LoadState();
-            IsaDo3DToolState.SetEnabled(IdsToEnableAll(state).ToList());
+            IsaDo3DToolState.SetEnabled(Tools.Select(tool => tool.Id).ToList());
         }
 
         private void DisableAll()
@@ -490,48 +547,11 @@ namespace IsaDo3D.EnvironmentArt
             IsaDo3DToolState.SetEnabled(new string[0]);
         }
 
-        // A opção certa é a que tem ligado exatamente os ids dela e nenhum das outras
-        private static int SelectedOption(ToolEntry tool, HashSet<string> state)
-        {
-            for (int i = 0; i < tool.Options.Length; ++i)
-            {
-                var ids = tool.Options[i].Ids;
-                bool matches = true;
-
-                foreach (var option in tool.Options)
-                    foreach (var id in option.Ids)
-                        if (state.Contains(id) != (System.Array.IndexOf(ids, id) >= 0)) matches = false;
-
-                if (matches) return i;
-            }
-
-            return 0;
-        }
-
         private static void Disable(string id, HashSet<string> state)
         {
             state.Remove(id);
             foreach (var child in Tools.Where(t => t.ParentId == id))
                 Disable(child.Id, state);
-        }
-
-        // Escolha mantém o que está escolhido, e sem escolha fica com a primeira opção que liga algo
-        private static IEnumerable<string> IdsToEnableAll(HashSet<string> state)
-        {
-            foreach (var tool in Tools)
-            {
-                if (tool.Options == null)
-                {
-                    yield return tool.Id;
-                    continue;
-                }
-
-                var option = tool.Options[SelectedOption(tool, state)];
-                if (option.Ids.Length == 0) option = tool.Options.First(o => o.Ids.Length > 0);
-
-                foreach (var id in option.Ids)
-                    yield return id;
-            }
         }
     }
 }
