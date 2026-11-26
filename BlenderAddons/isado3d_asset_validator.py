@@ -115,7 +115,6 @@ def _rotation_angle(obj):
     else:
         return max(abs(r) for r in obj.rotation_euler)
 
-    # A quaternion can describe the identity as a full turn
     angle = abs(angle) % (2 * math.pi)
     return min(angle, 2 * math.pi - angle)
 
@@ -246,7 +245,6 @@ class ISADO3D_OT_select_failed(Operator):
         return bool(_last_results)
 
     def execute(self, context):
-        # Selecting needs Object Mode
         if context.mode != 'OBJECT':
             if context.object is None:
                 self.report({'WARNING'}, "Leave edit mode to select objects.")
@@ -255,7 +253,6 @@ class ISADO3D_OT_select_failed(Operator):
 
         names = {r["name"] for r in _last_results}
         first = None
-        # select_all fails out of context
         for obj in context.view_layer.objects:
             hit = obj.name in names
             obj.select_set(hit)
@@ -280,7 +277,6 @@ class ISADO3D_OT_fix_transforms(Operator):
                 and any(o.type == 'MESH' for o in context.selected_objects))
 
     def execute(self, context):
-        # transform_apply goes over every selected object, not only the meshes
         objects = list(context.selected_editable_objects)
         try:
             bpy.ops.object.transform_apply(location=False, rotation=True, scale=True)

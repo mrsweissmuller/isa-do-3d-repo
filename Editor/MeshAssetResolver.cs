@@ -3,7 +3,7 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
-namespace IsaDo3D.EnvironmentArt
+namespace ArtTools.EnvironmentArt
 {
     internal static class MeshAssetResolver
     {

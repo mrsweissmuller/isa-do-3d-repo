@@ -59,7 +59,6 @@ def get_active_image(context):
     if context.area and context.area.type == 'IMAGE_EDITOR' and context.space_data.image:
         return context.space_data.image
 
-    # Fallback so it also works from the viewport
     obj = context.active_object
     if obj and obj.active_material and obj.active_material.use_nodes:
         for node in obj.active_material.node_tree.nodes:
@@ -124,7 +123,6 @@ def _check_watched_images():
             _pending_mtimes.pop(image.name, None)
             continue
 
-        # Krita changes the mtime as soon as it starts saving, so wait for it to settle
         if _pending_mtimes.get(image.name) != mtime:
             _pending_mtimes[image.name] = mtime
             continue
@@ -132,7 +130,6 @@ def _check_watched_images():
         _watched_images[image.name] = mtime
         _pending_mtimes.pop(image.name, None)
         image.reload()
-        # bpy.context.screen can be None inside a timer
         for window in bpy.context.window_manager.windows:
             for area in window.screen.areas:
                 if area.type in {'IMAGE_EDITOR', 'VIEW_3D', 'NODE_EDITOR'}:

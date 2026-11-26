@@ -4,24 +4,17 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.Rendering;
 
-namespace IsaDo3D.EnvironmentArt
+namespace ArtTools.EnvironmentArt
 {
-    // X/Textures/TEX_Nome(_D).png -> X/Materials/MAT_Nome.mat, só pelo clique direito. Os prefixos vêm do
-    // AssetNaming; textura com o prefixo antigo (T_) ou sem prefixo também vale. Tudo que a ferramenta decide
-    // (recusou, já existia, de onde copiou, o que não conseguiu ligar) sai no Console.
     public static class TextureMaterialCreator
     {
-        // Mapa que não é cor não ganha material próprio. Comparado com maiúscula e minúscula como está
         private static readonly string[] NonColorSuffixes = { "_N", "_Normal", "_M", "_Mask", "_R", "_AO", "_H", "_E", "_ORM", "_MRA" };
         private static readonly string[] ColorSuffixes = { "_D", "_Albedo", "_BaseColor" };
         private static readonly string[] NormalSuffixes = { "_N", "_Normal" };
 
-        // Onde o shader guarda a cor, do mais comum pro menos
         private static readonly string[] MainTextureProperties = { "_BaseMap", "_MainTex", "_BaseColorMap", "_Albedo" };
         private static readonly string[] NormalProperties = { "_BumpMap", "_NormalMap" };
 
-        // Mapa que é de uma textura só: herdado do material molde estaria errado, então sai. O resto do molde
-        // (ruído, máscara compartilhada de shader próprio) fica e é listado no Console
         private static readonly Dictionary<string, string> PerTextureProperties = new Dictionary<string, string>
         {
             { "_BumpMap", "_NORMALMAP" }, { "_NormalMap", "_NORMALMAP" }, { "_MetallicGlossMap", "_METALLICSPECGLOSSMAP" },
@@ -31,7 +24,7 @@ namespace IsaDo3D.EnvironmentArt
 
         [MenuItem("Assets/Create Material from Texture", true)]
         private static bool CanCreateForSelection() =>
-            IsaDo3DToolState.IsOn(ToolIds.TextureMaterial) && Selection.GetFiltered<Texture2D>(SelectionMode.Assets).Length > 0;
+            ArtToolsState.IsOn(ToolIds.TextureMaterial) && Selection.GetFiltered<Texture2D>(SelectionMode.Assets).Length > 0;
 
         [MenuItem("Assets/Create Material from Texture", false, 2000)]
         private static void CreateForSelection()
@@ -54,7 +47,6 @@ namespace IsaDo3D.EnvironmentArt
             Debug.Log($"[Art Tools] Create Material from Texture: {created} created, {existing} already existed, {refused} refused.");
         }
 
-        // Null quando a textura pode ganhar material; senão, o motivo
         private static string RefusalFor(string path)
         {
             if (!ProjectAssets.IsOurs(path)) return "it is a third-party or package asset";
@@ -65,7 +57,6 @@ namespace IsaDo3D.EnvironmentArt
             return null;
         }
 
-        // Índice da última pasta chamada exatamente Textures (Textures_Shared e afins não contam)
         private static int TexturesFolderIndex(string[] parts)
         {
             for (int i = parts.Length - 2; i >= 0; --i)
@@ -73,7 +64,6 @@ namespace IsaDo3D.EnvironmentArt
             return -1;
         }
 
-        // TEX_Nome_D -> Nome (sem o prefixo de tipo e sem o sufixo de cor)
         private static string BaseName(string texturePath)
         {
             var name = AssetNaming.StripTypePrefix(Path.GetFileNameWithoutExtension(texturePath));
@@ -85,7 +75,6 @@ namespace IsaDo3D.EnvironmentArt
             return name;
         }
 
-        // X/Textures/Sub/TEX_Nome_D.png -> X/Materials/Sub/MAT_Nome.mat
         private static string MaterialPathFor(string texturePath)
         {
             var parts = texturePath.Split('/');
@@ -94,7 +83,6 @@ namespace IsaDo3D.EnvironmentArt
             return string.Join("/", parts);
         }
 
-        // True quando criou; false quando o material já existia
         private static bool Create(string texturePath)
         {
             var materialPath = MaterialPathFor(texturePath);
@@ -106,7 +94,6 @@ namespace IsaDo3D.EnvironmentArt
             }
             var texture = AssetDatabase.LoadAssetAtPath<Texture2D>(texturePath);
 
-            // Cópia de um irmão da mesma família já vem com o shader e os ajustes certos do projeto
             var template = TemplateFor(materialPath);
             var shader = template != null ? template.shader : DefaultShader();
             if (shader == null)
@@ -121,7 +108,6 @@ namespace IsaDo3D.EnvironmentArt
             if (mainProperties.Count == 0)
                 notes.Add($"shader {shader.name} has no main texture property this tool knows: assign the texture by hand");
 
-            // Normal de mesmo nome ao lado da textura
             var normal = SiblingMap(texturePath, NormalSuffixes);
             var normalSet = false;
             if (normal != null)
@@ -136,7 +122,6 @@ namespace IsaDo3D.EnvironmentArt
                 notes.Add(normalSet ? $"normal assigned: {normal.name}" : $"found the normal {normal.name}, but the shader has no slot for it");
             }
 
-            // O que veio do molde: mapa que é de uma textura só sai, o resto fica e é avisado
             if (template != null)
             {
                 var removed = new List<string>();
@@ -160,7 +145,6 @@ namespace IsaDo3D.EnvironmentArt
                 if (kept.Count > 0) notes.Add($"kept from the template: {string.Join(", ", kept)}");
             }
 
-            // Outros mapas de mesmo nome que eu não sei em qual propriedade do shader entram
             foreach (var other in OtherSiblingMaps(texturePath))
                 notes.Add($"found {other}, not assigned: check whether it belongs in this material");
 
@@ -175,7 +159,6 @@ namespace IsaDo3D.EnvironmentArt
             return true;
         }
 
-        // Liga a textura em toda propriedade de cor que o shader tem. Devolve as que ligou; vazio quando nenhuma
         private static List<string> SetMainTexture(Material material, Texture2D texture)
         {
             var set = new List<string>();
@@ -187,7 +170,6 @@ namespace IsaDo3D.EnvironmentArt
             }
             if (set.Count > 0) return set;
 
-            // Shader próprio: a propriedade marcada como [MainTexture]
             var shader = material.shader;
             for (int i = 0; i < shader.GetPropertyCount(); ++i)
             {
@@ -200,7 +182,6 @@ namespace IsaDo3D.EnvironmentArt
             return set;
         }
 
-        // TEX_Nome_D.png -> a textura TEX_Nome<sufixo> da mesma pasta, com qualquer extensão; null se não tem
         private static Texture2D SiblingMap(string texturePath, string[] suffixes)
         {
             var dir = Path.GetDirectoryName(texturePath).Replace('\\', '/');
@@ -216,7 +197,6 @@ namespace IsaDo3D.EnvironmentArt
             return null;
         }
 
-        // Nome dos outros mapas de mesmo nome na pasta (máscara, AO, emissivo...), fora cor e normal
         private static List<string> OtherSiblingMaps(string texturePath)
         {
             var result = new List<string>();
@@ -242,8 +222,6 @@ namespace IsaDo3D.EnvironmentArt
             return pipeline != null && pipeline.defaultMaterial != null ? pipeline.defaultMaterial.shader : Shader.Find("Standard");
         }
 
-        // MAT_Floor_Wood_01 -> o MAT_Floor_* da mesma pasta com mais partes do nome em comum (MAT_Floor_Wood_Plank
-        // antes de MAT_Floor_Tile), empate por ordem de nome, pra sair sempre o mesmo
         private static Material TemplateFor(string materialPath)
         {
             var dir = Path.GetDirectoryName(materialPath).Replace('\\', '/');

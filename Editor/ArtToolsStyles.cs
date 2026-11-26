@@ -4,10 +4,9 @@ using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
 
-namespace IsaDo3D.EnvironmentArt
+namespace ArtTools.EnvironmentArt
 {
-    // O visual das janelas do pacote, num lugar só. As janelas puxam com using static
-    internal static class IsaDo3DStyles
+    internal static class ArtToolsStyles
     {
         public static Color Hex(int hex, float alpha = 1f)
         {
@@ -67,7 +66,6 @@ namespace IsaDo3D.EnvironmentArt
             element.style.marginRight = value;
         }
 
-        // Não pode chamar Show, a EditorWindow já tem um
         public static void SetVisible(VisualElement element, bool visible)
         {
             element.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
@@ -75,12 +73,10 @@ namespace IsaDo3D.EnvironmentArt
 
         private static Color Hovered(Color resting)
         {
-            // Sem fundo (aba inativa, link) ganha um véu, com fundo clareia ou escurece um pouco
             if (resting.a < 0.05f) return Dark ? new Color(1f, 1f, 1f, 0.08f) : new Color(0f, 0f, 0f, 0.08f);
             return Dark ? Color.Lerp(resting, Color.white, 0.14f) : Color.Lerp(resting, Color.black, 0.10f);
         }
 
-        // Estilo inline ganha do :hover da Unity, então o destaque do mouse é feito na mão
         public static void HoverFeedback(VisualElement element)
         {
             Color resting = default;
@@ -102,7 +98,6 @@ namespace IsaDo3D.EnvironmentArt
                 if (!hovering) return;
                 hovering = false;
 
-                // Se a cor mudou no meio (aba que virou ativa no clique), quem mudou manda
                 if (element.style.backgroundColor.value == hovered) element.style.backgroundColor = resting;
             });
         }
@@ -124,7 +119,6 @@ namespace IsaDo3D.EnvironmentArt
             return note;
         }
 
-        // Subtítulo dentro de um cartão
         public static Label Section(string text)
         {
             var section = new Label(text);
@@ -135,7 +129,6 @@ namespace IsaDo3D.EnvironmentArt
             return section;
         }
 
-        // Fundo da janela e rolagem, devolve onde entram o cabeçalho e os cartões
         public static VisualElement Page(VisualElement root)
         {
             root.Clear();
@@ -150,7 +143,6 @@ namespace IsaDo3D.EnvironmentArt
             return page;
         }
 
-        // Nome da ferramenta em cima da faixa colorida
         public static VisualElement Header(string title)
         {
             var header = new VisualElement();
@@ -183,7 +175,6 @@ namespace IsaDo3D.EnvironmentArt
             return Card(title, "", out _);
         }
 
-        // Cartão com título à esquerda e uma observação curta à direita
         public static VisualElement Card(string title, string note, out Label noteLabel)
         {
             var card = new VisualElement();
@@ -212,6 +203,43 @@ namespace IsaDo3D.EnvironmentArt
             return card;
         }
 
+        public static VisualElement Tile(Color accent, out VisualElement content)
+        {
+            var tile = Row();
+            tile.style.alignItems = Align.Stretch;
+            tile.style.backgroundColor = InsetColor;
+            tile.style.marginBottom = 6f;
+            tile.style.overflow = Overflow.Hidden;
+            Radius(tile, 6f);
+
+            var strip = new VisualElement();
+            strip.style.width = 3f;
+            strip.style.backgroundColor = accent;
+            tile.Add(strip);
+
+            content = new VisualElement();
+            content.style.flexGrow = 1f;
+            content.style.flexBasis = 0f;
+            Padding(content, 6f, 8f);
+            tile.Add(content);
+
+            return tile;
+        }
+
+        public static void SetTileAccent(VisualElement tile, Color accent)
+        {
+            tile[0].style.backgroundColor = accent;
+        }
+
+        public static Label TileTitle(string text)
+        {
+            var title = new Label(text);
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.color = TextColor;
+            title.style.marginBottom = 4f;
+            return title;
+        }
+
         public static Button FlatButton(string text, bool primary, Action onClick)
         {
             var button = new Button(onClick) { text = text };
@@ -226,7 +254,6 @@ namespace IsaDo3D.EnvironmentArt
             return button;
         }
 
-        // Ação secundária que não merece um botão cheio
         public static Button LinkButton(string text, Action onClick)
         {
             var button = new Button(onClick) { text = text };
@@ -242,7 +269,6 @@ namespace IsaDo3D.EnvironmentArt
         }
     }
 
-    // Escolha de uma opção entre várias, com a cara das abas do Hierarchy Organizer
     internal class SegmentedBar : VisualElement
     {
         private readonly VisualElement[] _segments;
@@ -252,9 +278,9 @@ namespace IsaDo3D.EnvironmentArt
         {
             style.flexDirection = FlexDirection.Row;
             style.alignItems = Align.Center;
-            style.backgroundColor = IsaDo3DStyles.InsetColor;
-            IsaDo3DStyles.Radius(this, 7f);
-            IsaDo3DStyles.Padding(this, 3f, 3f);
+            style.backgroundColor = ArtToolsStyles.InsetColor;
+            ArtToolsStyles.Radius(this, 7f);
+            ArtToolsStyles.Padding(this, 3f, 3f);
 
             _segments = new VisualElement[options.Length];
             _labels = new Label[options.Length];
@@ -263,14 +289,14 @@ namespace IsaDo3D.EnvironmentArt
             {
                 int index = i;
 
-                var segment = IsaDo3DStyles.Row();
+                var segment = ArtToolsStyles.Row();
                 segment.style.flexGrow = 1f;
                 segment.style.flexBasis = 0f;
                 segment.style.height = 24f;
                 segment.style.justifyContent = Justify.Center;
-                IsaDo3DStyles.Radius(segment, 5f);
+                ArtToolsStyles.Radius(segment, 5f);
                 segment.AddManipulator(new Clickable(() => onSelect(index)));
-                IsaDo3DStyles.HoverFeedback(segment);
+                ArtToolsStyles.HoverFeedback(segment);
 
                 var label = new Label(options[i]);
                 label.pickingMode = PickingMode.Ignore;
@@ -282,20 +308,18 @@ namespace IsaDo3D.EnvironmentArt
             }
         }
 
-        // Só pinta, quem guarda a escolha é a janela
         public void Select(int selected)
         {
             for (int i = 0; i < _segments.Length; i++)
             {
                 bool active = i == selected;
-                _segments[i].style.backgroundColor = active ? IsaDo3DStyles.Accent : Color.clear;
-                _labels[i].style.color = active ? Color.white : IsaDo3DStyles.MutedColor;
+                _segments[i].style.backgroundColor = active ? ArtToolsStyles.Accent : Color.clear;
+                _labels[i].style.color = active ? Color.white : ArtToolsStyles.MutedColor;
                 _labels[i].style.unityFontStyleAndWeight = active ? FontStyle.Bold : FontStyle.Normal;
             }
         }
     }
 
-    // Dropdown com o visual do pacote. O DropdownField da Unity abre o menu nativo do sistema, claro e sem estilo
     internal class DropdownPill : VisualElement
     {
         private readonly List<string> _choices;
@@ -307,17 +331,14 @@ namespace IsaDo3D.EnvironmentArt
 
         public event Action<string> Changed;
 
-        // Avisa também quando a pessoa escolhe a opção que já estava, pra quem aplica a escolha em outras linhas
         public bool AlwaysNotify;
 
-        // Texto de cada opção no menu
         public Func<string, string> MenuLabel
         {
             get => _menuLabel;
             set => _menuLabel = value;
         }
 
-        // Texto da opção escolhida, no campo fechado
         public Func<string, string> FieldLabel
         {
             get => _fieldLabel;
@@ -335,21 +356,21 @@ namespace IsaDo3D.EnvironmentArt
             style.flexDirection = FlexDirection.Row;
             style.alignItems = Align.Center;
             style.height = 20f;
-            style.backgroundColor = IsaDo3DStyles.InsetColor;
-            IsaDo3DStyles.Border(this, 1f, IsaDo3DStyles.CardBorder);
-            IsaDo3DStyles.Radius(this, 5f);
-            IsaDo3DStyles.Padding(this, 0f, 7f);
+            style.backgroundColor = ArtToolsStyles.InsetColor;
+            ArtToolsStyles.Border(this, 1f, ArtToolsStyles.CardBorder);
+            ArtToolsStyles.Radius(this, 5f);
+            ArtToolsStyles.Padding(this, 0f, 7f);
 
             _text = new Label { pickingMode = PickingMode.Ignore };
             _text.style.flexGrow = 1f;
             _text.style.flexShrink = 1f;
             _text.style.overflow = Overflow.Hidden;
-            _text.style.color = IsaDo3DStyles.TextColor;
+            _text.style.color = ArtToolsStyles.TextColor;
             _text.style.unityTextAlign = TextAnchor.MiddleLeft;
             Add(_text);
 
             var arrow = new Label("\u25BE") { pickingMode = PickingMode.Ignore };
-            arrow.style.color = IsaDo3DStyles.MutedColor;
+            arrow.style.color = ArtToolsStyles.MutedColor;
             arrow.style.marginLeft = 4f;
             Add(arrow);
 
@@ -357,7 +378,7 @@ namespace IsaDo3D.EnvironmentArt
             RefreshText();
 
             this.AddManipulator(new Clickable(Open));
-            IsaDo3DStyles.HoverFeedback(this);
+            ArtToolsStyles.HoverFeedback(this);
         }
 
         public void SetValueWithoutNotify(string newValue)
@@ -393,27 +414,26 @@ namespace IsaDo3D.EnvironmentArt
 #endif
         }
 
-        // O fundo de cada item fica com a Unity, senão o item perde o destaque do mouse
         private static void StyleMenu(GenericDropdownMenu menu)
         {
             for (var element = menu.contentContainer; element != null; element = element.parent)
             {
                 if (!element.ClassListContains("unity-base-dropdown__container-outer")) continue;
 
-                element.style.backgroundColor = IsaDo3DStyles.Dark ? IsaDo3DStyles.Hex(0x2F2F2F) : IsaDo3DStyles.Hex(0xE6E6E6);
-                IsaDo3DStyles.Border(element, 1f, IsaDo3DStyles.CardBorder);
-                IsaDo3DStyles.Radius(element, 7f);
-                IsaDo3DStyles.Padding(element, 4f, 4f);
+                element.style.backgroundColor = ArtToolsStyles.Dark ? ArtToolsStyles.Hex(0x2F2F2F) : ArtToolsStyles.Hex(0xE6E6E6);
+                ArtToolsStyles.Border(element, 1f, ArtToolsStyles.CardBorder);
+                ArtToolsStyles.Radius(element, 7f);
+                ArtToolsStyles.Padding(element, 4f, 4f);
                 break;
             }
 
             foreach (var item in menu.contentContainer.Children())
             {
                 item.style.height = 22f;
-                IsaDo3DStyles.Radius(item, 4f);
+                ArtToolsStyles.Radius(item, 4f);
 
                 var label = item.Q<Label>();
-                if (label != null) label.style.color = IsaDo3DStyles.TextColor;
+                if (label != null) label.style.color = ArtToolsStyles.TextColor;
             }
         }
     }

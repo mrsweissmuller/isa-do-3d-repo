@@ -4,17 +4,18 @@ using UnityEditor.SceneManagement;
 using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
-using static IsaDo3D.EnvironmentArt.IsaDo3DStyles;
+using static ArtTools.EnvironmentArt.ArtToolsStyles;
 
-namespace IsaDo3D.EnvironmentArt
+namespace ArtTools.EnvironmentArt
 {
     public class MaterialBatchTool : EditorWindow
     {
+        internal const int AccentHex = 0x4B8F27;
+
         private Material _material;
         private int _slotIndex;
         private bool _allSlots;
 
-        // Asset do Project ficaria com o material trocado sem ninguém ver
         private static readonly List<GameObject> SceneSelection = new List<GameObject>();
 
         private static List<GameObject> SelectedInScene()
@@ -26,7 +27,7 @@ namespace IsaDo3D.EnvironmentArt
         }
 
         [MenuItem("Art Tools/Material Batch", true)]
-        private static bool IsOn() => IsaDo3DToolState.IsOn(ToolIds.MaterialBatch);
+        private static bool IsOn() => ArtToolsState.IsOn(ToolIds.MaterialBatch);
 
         [MenuItem("Art Tools/Material Batch", false, 1)]
         public static void Open()
@@ -37,7 +38,6 @@ namespace IsaDo3D.EnvironmentArt
         private IntegerField _slotField;
         private Button _applyButton;
 
-        // Por causa da contagem no botão
         private void OnSelectionChange()
         {
             Refresh();

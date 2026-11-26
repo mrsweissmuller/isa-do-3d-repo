@@ -1,11 +1,11 @@
 using System.IO;
 using UnityEditor;
 
-namespace IsaDo3D.EnvironmentArt
+namespace ArtTools.EnvironmentArt
 {
     public static class OpenInMaya
     {
-        private const string MayaPathPrefKey = "Isa3D.OpenInMaya.MayaPath";
+        internal const string MayaPathPrefKey = "ArtTools.OpenInMaya.MayaPath";
         private const string MayaRoot = "C:/Program Files/Autodesk";
 
         private static readonly DccDescriptor Maya = new DccDescriptor
@@ -27,7 +27,7 @@ namespace IsaDo3D.EnvironmentArt
             DccLauncher.ConfigurePath(Maya);
         }
 
-        private static bool IsOn() => IsaDo3DToolState.IsOn(ToolIds.Maya);
+        private static bool IsOn() => ArtToolsState.IsOn(ToolIds.Maya);
 
         [MenuItem("Assets/Open in Maya", true)]
         [MenuItem("GameObject/Open in Maya", true)]

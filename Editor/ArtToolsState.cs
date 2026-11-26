@@ -1,11 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEditor.Build;
 using UnityEngine;
 
-namespace IsaDo3D.EnvironmentArt
+namespace ArtTools.EnvironmentArt
 {
     internal static class ToolIds
     {
@@ -16,7 +17,6 @@ namespace IsaDo3D.EnvironmentArt
         public const string TextureMaterial = "TEXTURE_MATERIAL";
         public const string Blender = "BLENDER";
         public const string Maya = "MAYA";
-        // O valor é do tempo em que só abria o Krita, mudar desligaria a ferramenta de quem já tinha ligado
         public const string ImageEditor = "KRITA";
         public const string Overlay = "OVERLAY";
         public const string FolderColors = "FOLDER_COLORS";
@@ -28,10 +28,11 @@ namespace IsaDo3D.EnvironmentArt
         };
     }
 
-    // Fica em UserSettings, que não vai pro Git, então cada um liga o que quiser
-    [FilePath("UserSettings/IsaDo3DTools.asset", FilePathAttribute.Location.ProjectFolder)]
-    internal class IsaDo3DToolState : ScriptableSingleton<IsaDo3DToolState>
+    [FilePath(ArtToolsState.SavedAt, FilePathAttribute.Location.ProjectFolder)]
+    internal class ArtToolsState : ScriptableSingleton<ArtToolsState>
     {
+        internal const string SavedAt = "UserSettings/ArtTools.asset";
+
         [SerializeField] private List<string> _enabled = new List<string>();
         [SerializeField] private bool _migrated;
 
@@ -39,7 +40,6 @@ namespace IsaDo3D.EnvironmentArt
 
         internal static bool IsOn(string tool) => instance._enabled.Contains(tool);
 
-        // Id de ferramenta que já saiu do pacote continua no arquivo de quem tinha ela ligada
         internal static HashSet<string> Enabled() => new HashSet<string>(instance._enabled.Where(ToolIds.All.Contains));
 
         internal static void SetEnabled(IEnumerable<string> tools)
@@ -50,11 +50,9 @@ namespace IsaDo3D.EnvironmentArt
             Changed?.Invoke();
             EditorApplication.RepaintHierarchyWindow();
 
-            // A Hierarchy nova só refaz o bind das linhas assim
             EditorApplication.DirtyHierarchyWindowSorting();
         }
 
-        // Versão antiga ligava por define no ProjectSettings, que é igual pra todo mundo
         [InitializeOnLoadMethod]
         private static void MigrateFromDefines()
         {
@@ -65,7 +63,6 @@ namespace IsaDo3D.EnvironmentArt
 
                 var migrated = RemoveOldDefines();
 
-                // Define de ferramenta que já saiu do pacote não entra
                 SetEnabled(migrated.Where(ToolIds.All.Contains));
 
                 if (migrated.Length == 0)
@@ -76,13 +73,13 @@ namespace IsaDo3D.EnvironmentArt
                 }
 
                 Debug.Log($"[Art Tools] {migrated.Length} tool(s) that were enabled by scripting define are now saved just for you, in UserSettings. " +
-                          "The ISADO3D_ defines were removed from ProjectSettings.asset, and that cleanup can be committed.");
+                          $"The {LegacyNames.DefinePrefix} defines were removed from ProjectSettings.asset, and that cleanup can be committed.");
             };
         }
 
         private static string[] RemoveOldDefines()
         {
-            const string prefix = "ISADO3D_";
+            const string prefix = LegacyNames.DefinePrefix;
             var group = EditorUserBuildSettings.selectedBuildTargetGroup;
             if (group == BuildTargetGroup.Unknown) return new string[0];
 
@@ -93,6 +90,60 @@ namespace IsaDo3D.EnvironmentArt
 
             PlayerSettings.SetScriptingDefineSymbols(target, defines.Except(old).ToArray());
             return old.Select(d => d.Substring(prefix.Length)).ToArray();
+        }
+    }
+
+    internal static class LegacyNames
+    {
+        internal const string DefinePrefix = "ISADO3D_";
+        internal const string PivotHolderTag = "IsaDo3DPivotHolder";
+        internal const string KritaPathPref = "Isa3D.OpenInKrita.KritaPath";
+
+        private static readonly (string Old, string Renamed)[] Files =
+        {
+            ("UserSettings/IsaDo3DTools.asset", ArtToolsState.SavedAt),
+            ("UserSettings/IsaDo3DFolderColors.asset", FolderColorState.SavedAt),
+
+            ("ProjectSettings/ArtToolsHierarchyColors.json", HierarchyGroupColors.FilePath),
+            ("ProjectSettings/IsaDo3DHierarchyColors.json", HierarchyGroupColors.FilePath),
+        };
+
+        private static readonly (string Old, string Renamed)[] TextPrefs =
+        {
+            ("Isa3D.OpenInBlender.BlenderPath", OpenInBlender.BlenderPathPrefKey),
+            ("Isa3D.OpenInBlender.BatexExportFolder", OpenInBlender.BatexExportFolderPrefKey),
+            ("Isa3D.OpenInMaya.MayaPath", OpenInMaya.MayaPathPrefKey),
+        };
+
+        private static readonly (string Old, string Renamed)[] TogglePrefs =
+        {
+            ("IsaDo3D.Hierarchy.ChildTint", HierarchyViewPrefs.TintKey),
+            ("IsaDo3D.Hierarchy.TreeLines", HierarchyViewPrefs.LinesKey),
+        };
+
+        private const string OldTintAlphaKey = "IsaDo3D.Hierarchy.ChildTintAlpha";
+
+        [InitializeOnLoadMethod]
+        private static void MoveToNewNames()
+        {
+            foreach (var (old, renamed) in Files)
+            {
+                if (!File.Exists(old) || File.Exists(renamed)) continue;
+
+                Directory.CreateDirectory(Path.GetDirectoryName(renamed));
+                File.Move(old, renamed);
+            }
+
+            foreach (var (old, renamed) in TextPrefs)
+                if (EditorPrefs.HasKey(old) && !EditorPrefs.HasKey(renamed))
+                    EditorPrefs.SetString(renamed, EditorPrefs.GetString(old));
+
+            foreach (var (old, renamed) in TogglePrefs)
+                if (EditorPrefs.HasKey(old) && !EditorPrefs.HasKey(renamed))
+                    EditorPrefs.SetBool(renamed, EditorPrefs.GetBool(old));
+
+            if (EditorPrefs.HasKey(OldTintAlphaKey) && !EditorPrefs.HasKey(HierarchyViewPrefs.TintAlphaKey))
+                EditorPrefs.SetFloat(HierarchyViewPrefs.TintAlphaKey, EditorPrefs.GetFloat(OldTintAlphaKey));
         }
     }
 }

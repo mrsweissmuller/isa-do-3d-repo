@@ -3,13 +3,13 @@ using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
-namespace IsaDo3D.EnvironmentArt
+namespace ArtTools.EnvironmentArt
 {
-    // Cor e selo de cada pasta. Fica em UserSettings, que não vai pro Git, então cada um tem as suas
-    [FilePath("UserSettings/IsaDo3DFolderColors.asset", FilePathAttribute.Location.ProjectFolder)]
+    [FilePath(FolderColorState.SavedAt, FilePathAttribute.Location.ProjectFolder)]
     internal class FolderColorState : ScriptableSingleton<FolderColorState>
     {
-        // Pasta sem cor própria usa a da pasta de cima; NoColor corta essa herança
+        internal const string SavedAt = "UserSettings/ArtToolsFolderColors.asset";
+
         internal const string Inherit = "";
         internal const string NoColor = "-";
 
@@ -23,11 +23,8 @@ namespace IsaDo3D.EnvironmentArt
 
         [SerializeField] private List<Entry> _entries = new List<Entry>();
 
-        // Cores que a pessoa guardou, além das que já vêm na janela
         [SerializeField] private List<string> _palette = new List<string>();
 
-        // Sobe a cada mudança. O Ctrl+Z da Unity traz o número antigo de volta, e é por ele que se sabe que o
-        // undo mexeu aqui e não em outra coisa
         [SerializeField] private int _revision;
         [NonSerialized] private int _seenRevision;
 
@@ -50,7 +47,6 @@ namespace IsaDo3D.EnvironmentArt
             if (instance._palette.Remove(color)) instance.Save(true);
         }
 
-        // Pra quem editou com save desligado
         internal static void Flush()
         {
             if (!instance._unsaved) return;
@@ -66,12 +62,10 @@ namespace IsaDo3D.EnvironmentArt
             return entry;
         }
 
-        // Arrastar no seletor de cor chama isto a cada movimento: aí vai com save desligado e um Flush no fim
         internal static void Edit(IEnumerable<string> guids, Action<Entry> change, bool save = true)
         {
             var state = instance;
 
-            // Entra no Ctrl+Z da Unity. Só este objeto é gravado, a cena não entra
             Undo.RecordObject(state, "Folder Color");
             state._revision++;
             state._seenRevision = state._revision;
@@ -88,7 +82,6 @@ namespace IsaDo3D.EnvironmentArt
                 change(entry);
             }
 
-            // Sai o que voltou ao padrão e o que era de pasta que não existe mais
             state._entries.RemoveAll(e =>
                 (e.color == Inherit && e.badge == "") || string.IsNullOrEmpty(AssetDatabase.GUIDToAssetPath(e.guid)));
             state._byGuid = null;
@@ -98,7 +91,6 @@ namespace IsaDo3D.EnvironmentArt
             Changed?.Invoke();
         }
 
-        // A Unity chama em todo Ctrl+Z e Ctrl+Y, quase sempre sem nada a ver com as pastas
         internal static void AfterUndoRedo()
         {
             var state = instance;
@@ -111,7 +103,6 @@ namespace IsaDo3D.EnvironmentArt
             Changed?.Invoke();
         }
 
-        // Pastas com cor própria dentro das pastas dadas, sem contar elas mesmas
         internal static List<string> ColoredInside(string[] guids)
         {
             var roots = new List<string>(guids.Length);

@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
 
-namespace IsaDo3D.EnvironmentArt
+namespace ArtTools.EnvironmentArt
 {
     internal static class ExternalToolLocator
     {
@@ -57,13 +57,11 @@ namespace IsaDo3D.EnvironmentArt
                 .FirstOrDefault();
         }
 
-        // Comparar como texto põe "4.10" antes de "4.9"
         private static Version ExtractVersion(string folderName)
         {
             var match = Regex.Match(folderName, @"\d+(\.\d+)*");
             if (!match.Success) return new Version(0, 0);
 
-            // Version.TryParse precisa de major.minor
             var value = match.Value.Contains('.') ? match.Value : match.Value + ".0";
             return Version.TryParse(value, out var version) ? version : new Version(0, 0);
         }

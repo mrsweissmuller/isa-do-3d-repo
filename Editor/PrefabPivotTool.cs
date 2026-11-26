@@ -6,16 +6,18 @@ using UnityEditor.UIElements;
 using UnityEditorInternal;
 using UnityEngine;
 using UnityEngine.UIElements;
-using static IsaDo3D.EnvironmentArt.IsaDo3DStyles;
+using static ArtTools.EnvironmentArt.ArtToolsStyles;
 
-namespace IsaDo3D.EnvironmentArt
+namespace ArtTools.EnvironmentArt
 {
     public class PrefabPivotTool : EditorWindow
     {
+        internal const int AccentHex = 0x3D64C7;
+
         private enum PivotPreset { Center, Bottom, Top }
 
         private const float VertexSnapMaxScreenPixels = 40f;
-        private const string PivotHolderTag = "IsaDo3DPivotHolder";
+        private const string PivotHolderTag = "ArtToolsPivotHolder";
 
         private Vector3 _customPivot;
         private bool _customModeActive;
@@ -37,7 +39,7 @@ namespace IsaDo3D.EnvironmentArt
         private Button _snapButton;
 
         [MenuItem("Art Tools/Object Editor", true)]
-        private static bool IsOn() => IsaDo3DToolState.IsOn(ToolIds.ObjectEditor);
+        private static bool IsOn() => ArtToolsState.IsOn(ToolIds.ObjectEditor);
 
         [MenuItem("Art Tools/Object Editor", false, 0)]
         public static void Open()
@@ -60,7 +62,6 @@ namespace IsaDo3D.EnvironmentArt
             Refresh();
         }
 
-        // Desfazer e reverter mexem no pivô sem trocar a seleção
         private void OnHierarchyChange()
         {
             Refresh();
@@ -114,15 +115,18 @@ namespace IsaDo3D.EnvironmentArt
         {
             var card = Card("Edit pivot", "this instance only", out _);
 
-            card.Add(Section("Automatic"));
+            var automatic = Tile(Hex(AccentHex), out var automaticContent);
+            automaticContent.Add(TileTitle("Automatic"));
             var presets = Row();
-            presets.style.marginBottom = 10f;
             presets.Add(PresetButton("Center", PivotPreset.Center, 4f));
             presets.Add(PresetButton("Bottom", PivotPreset.Bottom, 4f));
             presets.Add(PresetButton("Top", PivotPreset.Top, 0f));
-            card.Add(presets);
+            automaticContent.Add(presets);
+            card.Add(automatic);
 
-            card.Add(Section("Manual"));
+            var manual = Tile(Hex(AccentHex), out var manualContent);
+            manual.style.marginBottom = 0f;
+            manualContent.Add(TileTitle("Manual"));
             _customToggle = new Toggle("Enable editable mode");
             _customToggle.RegisterValueChangedCallback(e =>
             {
@@ -130,7 +134,7 @@ namespace IsaDo3D.EnvironmentArt
                 SceneView.RepaintAll();
                 Refresh();
             });
-            card.Add(_customToggle);
+            manualContent.Add(_customToggle);
 
             _customFields = new VisualElement();
 
@@ -167,7 +171,8 @@ namespace IsaDo3D.EnvironmentArt
             apply.style.marginTop = 8f;
             _customFields.Add(apply);
 
-            card.Add(_customFields);
+            manualContent.Add(_customFields);
+            card.Add(manual);
             return card;
         }
 
@@ -233,7 +238,6 @@ namespace IsaDo3D.EnvironmentArt
                 if (target != null) _customPivot = CalculateBounds(target).center;
             }
 
-            // Reparentar asset do Project a Unity recusa, e mover a posição dele editaria o prefab
             bool inScene = target != null && target.scene.IsValid();
             SetVisible(_status, !inScene);
             SetVisible(_cards, inScene);
@@ -267,7 +271,6 @@ namespace IsaDo3D.EnvironmentArt
             _snapButton.SetEnabled(_surfaceTarget != null);
         }
 
-        // Separado porque arrastar o gizmo chama isso a cada movimento
         private void RefreshPosition()
         {
             if (_positionLabel != null) _positionLabel.text = "Position: " + _customPivot.ToString("F3");
@@ -299,7 +302,6 @@ namespace IsaDo3D.EnvironmentArt
             var e = Event.current;
             if (e.type != EventType.MouseDown || e.button != 0 || !e.control) return;
 
-            // Consome o clique mesmo sem vértice perto, senão a Unity troca a seleção
             e.Use();
             if (!TryFindNearestVertex(target, e.mousePosition, out var worldVertex)) return;
 
@@ -369,7 +371,6 @@ namespace IsaDo3D.EnvironmentArt
             return bounds;
         }
 
-        // Ancestral da superfície arrastaria ela junto e a referência mudaria a cada clique
         private GameObject[] SnapCandidates()
         {
             if (_surfaceTarget == null) return new GameObject[0];
@@ -415,7 +416,6 @@ namespace IsaDo3D.EnvironmentArt
         {
             var existingHolder = ResolvePivotHolder(target);
 
-            // A Unity não deixa mudar a hierarquia dentro de uma instância de prefab
             if (existingHolder == null
                 && PrefabUtility.IsPartOfPrefabInstance(target)
                 && !PrefabUtility.IsOutermostPrefabInstanceRoot(target))
@@ -438,13 +438,18 @@ namespace IsaDo3D.EnvironmentArt
             Selection.activeGameObject = pivotHolder;
         }
 
-        // Tag fora do laço, o InternalEditorUtility.tags cria um array a cada acesso
         private static GameObject ResolvePivotHolder(GameObject go)
         {
-            if (!InternalEditorUtility.tags.Contains(PivotHolderTag)) return null;
+            var tags = InternalEditorUtility.tags;
+            bool current = tags.Contains(PivotHolderTag);
+            bool legacy = tags.Contains(LegacyNames.PivotHolderTag);
+            if (!current && !legacy) return null;
 
             for (var t = go.transform; t != null; t = t.parent)
-                if (t.gameObject.CompareTag(PivotHolderTag)) return t.gameObject;
+            {
+                if (current && t.gameObject.CompareTag(PivotHolderTag)) return t.gameObject;
+                if (legacy && t.gameObject.CompareTag(LegacyNames.PivotHolderTag)) return t.gameObject;
+            }
             return null;
         }
 
@@ -493,7 +498,6 @@ namespace IsaDo3D.EnvironmentArt
                 return pivotHolder;
             }
 
-            // Filho que ficasse no holder andaria junto com ele
             var children = new List<Transform>();
             foreach (Transform child in pivotHolder.transform) children.Add(child);
 

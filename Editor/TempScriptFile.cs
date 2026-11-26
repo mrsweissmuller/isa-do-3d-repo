@@ -2,17 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 
-namespace IsaDo3D.EnvironmentArt
+namespace ArtTools.EnvironmentArt
 {
-    // Nome único: com nome fixo a segunda mesh sobrescrevia o script da primeira antes do DCC ler
     internal static class TempScriptFile
     {
-        private const string Prefix = "isado3d_";
+        private const string Prefix = "arttools_";
 
-        // Arquivo recente pode ainda estar sendo aberto pelo DCC
         private static readonly TimeSpan MinAgeToDelete = TimeSpan.FromHours(1);
 
-        // Avisa uma vez por arquivo, senão repete a cada mesh aberta
         private static readonly HashSet<string> WarnedStuck = new HashSet<string>();
 
         public static string Write(string nameHint, string extension, string contents)
@@ -26,7 +23,6 @@ namespace IsaDo3D.EnvironmentArt
             return path;
         }
 
-        // Falso quando o DCC ainda segura o arquivo
         public static bool TryDelete(string path)
         {
             try

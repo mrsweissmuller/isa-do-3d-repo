@@ -4,12 +4,12 @@ using UnityEditor.Overlays;
 using UnityEditor.Toolbars;
 using UnityEngine.UIElements;
 
-namespace IsaDo3D.EnvironmentArt
+namespace ArtTools.EnvironmentArt
 {
     [Overlay(typeof(SceneView), "Art Tools", true)]
-    public class IsaDo3DToolbarOverlay : ToolbarOverlay
+    public class ArtToolsToolbarOverlay : ToolbarOverlay
     {
-        public IsaDo3DToolbarOverlay() : base(
+        public ArtToolsToolbarOverlay() : base(
             OpenInBlenderButton.Id,
             OpenInMayaButton.Id,
             OpenInImageEditorButton.Id,
@@ -21,24 +21,23 @@ namespace IsaDo3D.EnvironmentArt
 
         private bool _wasOn;
 
-        // Só mexe quando o toggle da barra muda, senão desfaz quem fechou ela pelo menu da Scene View
         public override void OnCreated()
         {
             base.OnCreated();
-            IsaDo3DToolState.Changed += OnToolsChanged;
-            _wasOn = IsaDo3DToolState.IsOn(ToolIds.Overlay);
+            ArtToolsState.Changed += OnToolsChanged;
+            _wasOn = ArtToolsState.IsOn(ToolIds.Overlay);
             if (!_wasOn) displayed = false;
         }
 
         public override void OnWillBeDestroyed()
         {
-            IsaDo3DToolState.Changed -= OnToolsChanged;
+            ArtToolsState.Changed -= OnToolsChanged;
             base.OnWillBeDestroyed();
         }
 
         private void OnToolsChanged()
         {
-            bool on = IsaDo3DToolState.IsOn(ToolIds.Overlay);
+            bool on = ArtToolsState.IsOn(ToolIds.Overlay);
             if (on == _wasOn) return;
 
             _wasOn = on;
@@ -46,7 +45,6 @@ namespace IsaDo3D.EnvironmentArt
         }
     }
 
-    // Ferramenta desligada some da barra
     internal abstract class ToolButton : EditorToolbarButton
     {
         private readonly string _tool;
@@ -60,22 +58,22 @@ namespace IsaDo3D.EnvironmentArt
 
             RegisterCallback<AttachToPanelEvent>(_ =>
             {
-                IsaDo3DToolState.Changed += Refresh;
+                ArtToolsState.Changed += Refresh;
                 Refresh();
             });
-            RegisterCallback<DetachFromPanelEvent>(_ => IsaDo3DToolState.Changed -= Refresh);
+            RegisterCallback<DetachFromPanelEvent>(_ => ArtToolsState.Changed -= Refresh);
         }
 
         private void Refresh()
         {
-            style.display = IsaDo3DToolState.IsOn(_tool) ? DisplayStyle.Flex : DisplayStyle.None;
+            style.display = ArtToolsState.IsOn(_tool) ? DisplayStyle.Flex : DisplayStyle.None;
         }
     }
 
     [EditorToolbarElement(Id, typeof(SceneView))]
     internal class OpenInBlenderButton : ToolButton
     {
-        public const string Id = "IsaDo3D/OpenInBlenderButton";
+        public const string Id = "ArtTools/OpenInBlenderButton";
 
         public OpenInBlenderButton() : base(ToolIds.Blender, "Blender",
             "Open the selected object's mesh in Blender", OpenInBlender.OpenSelected) { }
@@ -84,7 +82,7 @@ namespace IsaDo3D.EnvironmentArt
     [EditorToolbarElement(Id, typeof(SceneView))]
     internal class OpenInMayaButton : ToolButton
     {
-        public const string Id = "IsaDo3D/OpenInMayaButton";
+        public const string Id = "ArtTools/OpenInMayaButton";
 
         public OpenInMayaButton() : base(ToolIds.Maya, "Maya",
             "Open the selected object's mesh in Maya", OpenInMaya.OpenSelected) { }
@@ -93,7 +91,7 @@ namespace IsaDo3D.EnvironmentArt
     [EditorToolbarElement(Id, typeof(SceneView))]
     internal class OpenInImageEditorButton : ToolButton
     {
-        public const string Id = "IsaDo3D/OpenInImageEditorButton";
+        public const string Id = "ArtTools/OpenInImageEditorButton";
 
         public OpenInImageEditorButton() : base(ToolIds.ImageEditor, "Image",
             "Open the selected object's texture in the image editor", OpenInImageEditor.OpenSelected) { }
@@ -102,7 +100,7 @@ namespace IsaDo3D.EnvironmentArt
     [EditorToolbarElement(Id, typeof(SceneView))]
     internal class PivotToolButton : ToolButton
     {
-        public const string Id = "IsaDo3D/PivotToolButton";
+        public const string Id = "ArtTools/PivotToolButton";
 
         public PivotToolButton() : base(ToolIds.ObjectEditor, "O.E.",
             "Open the Object Editor", PrefabPivotTool.Open) { }
@@ -111,7 +109,7 @@ namespace IsaDo3D.EnvironmentArt
     [EditorToolbarElement(Id, typeof(SceneView))]
     internal class MaterialBatchButton : ToolButton
     {
-        public const string Id = "IsaDo3D/MaterialBatchButton";
+        public const string Id = "ArtTools/MaterialBatchButton";
 
         public MaterialBatchButton() : base(ToolIds.MaterialBatch, "M.B.",
             "Open Material Batch (apply one material to the selected objects)", MaterialBatchTool.Open) { }
@@ -120,7 +118,7 @@ namespace IsaDo3D.EnvironmentArt
     [EditorToolbarElement(Id, typeof(SceneView))]
     internal class HierarchyOrganizerButton : ToolButton
     {
-        public const string Id = "IsaDo3D/HierarchyOrganizerButton";
+        public const string Id = "ArtTools/HierarchyOrganizerButton";
 
         public HierarchyOrganizerButton() : base(ToolIds.HierarchyOrganizer, "H.O.",
             "Open the Hierarchy Organizer (groups, auto organize and batch rename)",

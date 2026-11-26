@@ -4,18 +4,16 @@ using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
-namespace IsaDo3D.EnvironmentArt
+namespace ArtTools.EnvironmentArt
 {
-    // Pinta o ícone da pasta na janela Project e põe um selo no canto, pela janelinha do clique direito. A cor vale pras
-    // pastas de dentro até uma delas ter a própria; o selo é só da pasta. Não usa API interna da Unity: o ícone
-    // pintado é o que a própria Unity entrega pra pasta, clareado uma vez
     [InitializeOnLoad]
     internal static class FolderColors
     {
+        internal const int AccentHex = 0xB1992F;
+
         private const string Menu = "Assets/Folder Color...";
         private const string ToolsMenu = "Art Tools/Folder Color...";
 
-        // As cores que já vêm na janela; as que a pessoa guarda ficam no FolderColorState
         internal static readonly (string Name, string Hex)[] Presets =
         {
             ("Red", "#FF7B7B"), ("Orange", "#FF9B7B"), ("Amber", "#FFD07B"), ("Yellow", "#F5F07B"),
@@ -23,7 +21,6 @@ namespace IsaDo3D.EnvironmentArt
             ("Purple", "#B07BF0"), ("Pink", "#F07BB8"), ("Gray", "#A0A0A0"),
         };
 
-        // A chave é o que fica salvo
         internal static readonly (string Key, string Name)[] Badges =
         {
             ("mesh", "Mesh"), ("material", "Material"), ("texture", "Texture"), ("prefab", "Prefab"),
@@ -39,10 +36,8 @@ namespace IsaDo3D.EnvironmentArt
             public Texture Badge;
         }
 
-        // Do que já foi desenhado, arquivo incluso, pra só resolver herança uma vez por item
         private static readonly Dictionary<string, Look> Looks = new Dictionary<string, Look>();
 
-        // Ícone da Unity -> cópia em tons de branco, que aceita qualquer cor por cima
         private static readonly Dictionary<Texture2D, Texture2D> Tintable = new Dictionary<Texture2D, Texture2D>();
         private static readonly HashSet<Texture2D> Pending = new HashSet<Texture2D>();
         private static readonly Dictionary<string, Texture> BadgeIcons = new Dictionary<string, Texture>();
@@ -55,7 +50,7 @@ namespace IsaDo3D.EnvironmentArt
             EditorApplication.projectWindowItemOnGUI += OnItemGUI;
             EditorApplication.projectChanged += Refresh;
             FolderColorState.Changed += Refresh;
-            IsaDo3DToolState.Changed += Refresh;
+            ArtToolsState.Changed += Refresh;
             Undo.undoRedoPerformed += FolderColorState.AfterUndoRedo;
             AssemblyReloadEvents.beforeAssemblyReload += DestroyTextures;
         }
@@ -68,7 +63,6 @@ namespace IsaDo3D.EnvironmentArt
 
         private static void OnItemGUI(string guid, Rect rect)
         {
-            // Erro que sai daqui deixa a janela Project inteira em branco, então nenhum escapa
             try
             {
                 if (Event.current.type == EventType.Repaint) Draw(guid, rect);
@@ -83,7 +77,7 @@ namespace IsaDo3D.EnvironmentArt
 
         private static void Draw(string guid, Rect rect)
         {
-            if (!IsaDo3DToolState.IsOn(ToolIds.FolderColors)) return;
+            if (!ArtToolsState.IsOn(ToolIds.FolderColors)) return;
 
             if (!Looks.TryGetValue(guid, out var look))
             {
@@ -92,7 +86,6 @@ namespace IsaDo3D.EnvironmentArt
             }
             if (!look.HasColor && look.Badge == null) return;
 
-            // Lista: ícone do tamanho da linha. Na lista da coluna da direita ele fica 3 px pra dentro
             bool list = rect.height <= 20f;
             var icon = list
                 ? new Rect(rect.x + (Mathf.Approximately(rect.x, 14f) ? 3f : 0f), rect.y, rect.height, rect.height)
@@ -138,12 +131,10 @@ namespace IsaDo3D.EnvironmentArt
                 look.HasColor = deciding.color != FolderColorState.NoColor
                                 && ColorUtility.TryParseHtmlString(deciding.color, out look.Color);
 
-            // Vem o ícone de pasta vazia quando ela está vazia
             if (look.HasColor) look.Icon = AssetDatabase.GetCachedIcon(path) as Texture2D;
             return look;
         }
 
-        // Sobe a partir da pasta dada, ela inclusa, até a primeira que decide a cor. Null quando nenhuma decide
         internal static FolderColorState.Entry Deciding(string path, out string folder)
         {
             folder = path;
@@ -158,10 +149,8 @@ namespace IsaDo3D.EnvironmentArt
             }
         }
 
-        // Nome da cor quando é uma das que já vêm, senão o próprio código
         internal static string ColorName(string hex) => Presets.FirstOrDefault(p => p.Hex == hex).Name ?? hex;
 
-        // Feito fora do OnGUI, porque trocar o alvo de desenho no meio do repaint bagunça a janela
         private static void Schedule(Texture2D icon)
         {
             Pending.Add(icon);
@@ -182,7 +171,6 @@ namespace IsaDo3D.EnvironmentArt
                 }
                 catch (Exception e)
                 {
-                    // Fica null pra não tentar de novo a cada repaint
                     Tintable[icon] = null;
                     Debug.LogException(e);
                 }
@@ -191,8 +179,6 @@ namespace IsaDo3D.EnvironmentArt
             EditorApplication.RepaintProjectWindow();
         }
 
-        // O ícone da Unity não deixa ler os pixels, então passa por um RenderTexture. Fica só o sombreado,
-        // puxado pro branco, com a transparência original
         private static Texture2D MakeTintable(Texture2D source)
         {
             var target = RenderTexture.GetTemporary(source.width, source.height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear);
@@ -258,15 +244,14 @@ namespace IsaDo3D.EnvironmentArt
             Selection.assetGUIDs.Where(guid => AssetDatabase.IsValidFolder(AssetDatabase.GUIDToAssetPath(guid))).ToArray();
 
         [MenuItem(Menu, true)]
-        private static bool CanOpen() => IsaDo3DToolState.IsOn(ToolIds.FolderColors) && SelectedFolders().Length > 0;
+        private static bool CanOpen() => ArtToolsState.IsOn(ToolIds.FolderColors) && SelectedFolders().Length > 0;
 
         [MenuItem(Menu, false, 2100)]
         private static void OpenFromProject() => FolderColorPopup.Open(SelectedFolders());
 
         [MenuItem(ToolsMenu, true)]
-        private static bool IsOn() => IsaDo3DToolState.IsOn(ToolIds.FolderColors);
+        private static bool IsOn() => ArtToolsState.IsOn(ToolIds.FolderColors);
 
-        // Pelo menu Art Tools e pelo botão Open da janela de Settings, onde pode não ter pasta selecionada
         [MenuItem(ToolsMenu, false, 3)]
         public static void Open()
         {

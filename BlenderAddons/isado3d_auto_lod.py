@@ -114,7 +114,7 @@ def _build_lod(src, level, ratio, prefs, context):
     dec = dup.modifiers.new(_DECIMATE_MOD, 'DECIMATE')
     dec.decimate_type = 'COLLAPSE'
     dec.ratio = ratio
-    dec.use_collapse_triangulate = False  # Keeps quads and UVs
+    dec.use_collapse_triangulate = False
 
     mod_order = [_DECIMATE_MOD]
     if prefs.triangulate:
@@ -125,7 +125,6 @@ def _build_lod(src, level, ratio, prefs, context):
         _apply_modifiers(dup, mod_order, context)
         tris = _tri_count(dup.data)
     else:
-        # Not applied, dup.data still has the full mesh
         evaluated = dup.evaluated_get(context.evaluated_depsgraph_get())
         tris = _tri_count(evaluated.to_mesh())
         evaluated.to_mesh_clear()
@@ -168,7 +167,6 @@ class ISADO3D_OT_generate_lods(Operator):
         for src in sources:
             base = _base_name(src.name)
 
-            # Decimating an already reduced LOD degrades it further
             m = _LOD_SUFFIX_RE.search(src.name)
             if m and not src.name.endswith("_LOD0"):
                 _last_report.append({"base": src.name,
@@ -200,7 +198,6 @@ class ISADO3D_OT_generate_lods(Operator):
                 levels_info.append((lod_obj.name, tris))
                 created += 1
 
-            # Unity builds the LODGroup from this Empty
             if prefs.group_under_empty:
                 empty = bpy.data.objects.new(base, None)
                 empty.matrix_world = lod0.matrix_world.copy()

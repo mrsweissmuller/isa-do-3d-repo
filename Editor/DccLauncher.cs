@@ -5,7 +5,7 @@ using System.IO;
 using UnityEditor;
 using Debug = UnityEngine.Debug;
 
-namespace IsaDo3D.EnvironmentArt
+namespace ArtTools.EnvironmentArt
 {
     internal class DccDescriptor
     {

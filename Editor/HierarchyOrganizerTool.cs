@@ -13,13 +13,14 @@ using UHE = Unity.Hierarchy.Editor;
 using UIE = UnityEngine.UIElements;
 #endif
 
-namespace IsaDo3D.EnvironmentArt
+namespace ArtTools.EnvironmentArt
 {
     public partial class HierarchyOrganizerTool : EditorWindow
     {
+        internal const int AccentHex = 0xB85B88;
+
         public const string HeaderPrefix = "---";
 
-        // Título sem cor, só o nome entre duas linhas, pra separar blocos de grupos
         public const string TitlePrefix = "===";
 
         public static bool IsTitle(string name)
@@ -37,52 +38,50 @@ namespace IsaDo3D.EnvironmentArt
             public string Name;
             public Color Color;
             public string Tooltip;
-            // Nomes antigos que continuam valendo pro mesmo grupo
             public string[] Aliases = System.Array.Empty<string>();
         }
 
-        // Na ordem em que entram na cena. As seis primeiras cores seguem a ordem dos banners da referência
         private static readonly DefaultGroup[] DefaultGroups =
         {
             new DefaultGroup
             {
-                Name = "SETUP", Color = FromHex(0x3d64c7), // Azul
+                Name = "SETUP", Color = FromHex(0x3d64c7),
                 Tooltip = "Cameras, managers and core scene systems.",
                 Aliases = new[] { "CORE" },
             },
             new DefaultGroup
             {
-                Name = "LIGHTING", Color = FromHex(0x4b8f27), // Verde
+                Name = "LIGHTING", Color = FromHex(0x4b8f27),
                 Tooltip = "Lights, reflection probes, light probes and lighting volumes.",
             },
             new DefaultGroup
             {
-                Name = "VFX", Color = FromHex(0xbb7723), // Laranja
+                Name = "VFX", Color = FromHex(0xbb7723),
                 Tooltip = "Particle systems and visual effects.",
             },
             new DefaultGroup
             {
-                Name = "AUDIO", Color = FromHex(0x7137a5), // Roxo
+                Name = "AUDIO", Color = FromHex(0x7137a5),
                 Tooltip = "Audio sources, ambiences and music.",
             },
             new DefaultGroup
             {
-                Name = "UI", Color = FromHex(0xb85b88), // Rosa
+                Name = "UI", Color = FromHex(0xb85b88),
                 Tooltip = "Canvases and interface elements.",
             },
             new DefaultGroup
             {
-                Name = "GAMEPLAY", Color = FromHex(0x539ba5), // Turquesa
+                Name = "GAMEPLAY", Color = FromHex(0x539ba5),
                 Tooltip = "Level design objects: spawns, interactables and triggers.",
             },
             new DefaultGroup
             {
-                Name = "ENVIRONMENT", Color = FromHex(0xb74843), // Coral, fora da referência
+                Name = "ENVIRONMENT", Color = FromHex(0xb74843),
                 Tooltip = "Static scenery: terrain, architecture and static meshes.",
             },
             new DefaultGroup
             {
-                Name = "PROPS", Color = FromHex(0xb1992f), // Dourado, fora da referência
+                Name = "PROPS", Color = FromHex(0xb1992f),
                 Tooltip = "Dynamic or interactive set dressing.",
             },
         };
@@ -100,7 +99,6 @@ namespace IsaDo3D.EnvironmentArt
             return DefaultGroups.FirstOrDefault(g => g.Name == key || g.Aliases.Contains(key));
         }
 
-        // Grupo antigo (CORE) conta como o padrão atual (SETUP), senão criava um duplicado
         internal static string CanonicalGroupKey(string cleanName)
         {
             return FindDefaultGroup(cleanName)?.Name ?? cleanName.ToUpperInvariant();
@@ -119,7 +117,7 @@ namespace IsaDo3D.EnvironmentArt
         }
 
         [MenuItem("Art Tools/Hierarchy Organizer", true)]
-        private static bool IsOn() => IsaDo3DToolState.IsOn(ToolIds.HierarchyOrganizer);
+        private static bool IsOn() => ArtToolsState.IsOn(ToolIds.HierarchyOrganizer);
 
         [MenuItem("Art Tools/Hierarchy Organizer", false, 2)]
         public static void Open()
@@ -127,7 +125,6 @@ namespace IsaDo3D.EnvironmentArt
             GetWindow<HierarchyOrganizerTool>("Hierarchy Organizer");
         }
 
-        // Prefab do Project não entra, e com topLevel o filho selecionado junto do pai fica no pai
         private static GameObject[] SelectedSceneObjects(bool topLevel = false)
         {
             var objects = topLevel ? Selection.GetFiltered<GameObject>(SelectionMode.TopLevel) : Selection.gameObjects;
@@ -175,7 +172,6 @@ namespace IsaDo3D.EnvironmentArt
                 ordered.Add(go);
             }
 
-            // Com separador na cena cada grupo fica na vaga de um grupo, senão os separadores iam todos pro fim
             bool keepSlots = SceneManager.GetActiveScene().GetRootGameObjects().Any(go => IsTitle(go.name));
             var slots = keepSlots
                 ? ordered.Select(go => go.transform.GetSiblingIndex()).OrderBy(i => i).ToList()
@@ -183,7 +179,6 @@ namespace IsaDo3D.EnvironmentArt
 
             for (int i = 0; i < ordered.Count; i++)
             {
-                // Grupo recém-criado vai pro lugar dele sem contar como reordenado
                 if (SetSiblingIndexWithUndo(ordered[i].transform, slots[i]) && !createdNow.Contains(ordered[i]))
                     reordered++;
             }
@@ -213,10 +208,8 @@ namespace IsaDo3D.EnvironmentArt
             if (transform.GetSiblingIndex() == index) return false;
 
 #if UNITY_2022_3_OR_NEWER
-            // Undo.SetSiblingIndex pra reordenação entrar no Ctrl+Z
             Undo.SetSiblingIndex(transform, index, "Reorder group");
 #else
-            // Não existe Undo.SetSiblingIndex na 2021.3
             Undo.RecordObject(transform, "Reorder group");
             transform.SetSiblingIndex(index);
 #endif
@@ -229,7 +222,6 @@ namespace IsaDo3D.EnvironmentArt
             return DefaultGroups.Where(g => !cache.ContainsKey(g.Name)).Select(g => g.Name).ToList();
         }
 
-        // Só os padrão que existem na cena, na ordem em que deveriam estar
         private static List<GameObject> PresentDefaultGroups()
         {
             var cache = BuildGroupCache();
@@ -243,7 +235,6 @@ namespace IsaDo3D.EnvironmentArt
             return true;
         }
 
-        // Troca os grupos entre as vagas que eles já ocupam, o resto da raiz não sai do lugar
         private static void ReorderDefaultGroups()
         {
             var present = PresentDefaultGroups();
@@ -260,7 +251,6 @@ namespace IsaDo3D.EnvironmentArt
             Undo.CollapseUndoOperations(undoGroup);
         }
 
-        // Nome ganha de componente (chest tem mesh, mas é gameplay)
         private static readonly (string Keyword, string Destination)[] NameRules =
         {
             ("spawn", "GAMEPLAY/Spawns"),
@@ -278,15 +268,12 @@ namespace IsaDo3D.EnvironmentArt
             ("interactive", "GAMEPLAY/Interactables"),
         };
 
-        // Por palavra inteira, senão Outdoor_Lamp e Doorway viram porta
         private static string[] NameTokens(string name)
         {
             var spaced = Regex.Replace(name, "([a-z0-9])([A-Z])", "$1 $2").ToLowerInvariant();
             return Regex.Split(spaced, "[^a-z0-9]+");
         }
 
-        // Mesh antes de luz e de partícula: tocha (mesh + light + chama) é prop
-        // Por tipo, ler o texto do script a cada objeto ficaria caro
         private static readonly Dictionary<System.Type, bool> RootOnlyTypes = new Dictionary<System.Type, bool>();
         private static Dictionary<string, MonoScript> _scriptsByName;
 
@@ -303,7 +290,6 @@ namespace IsaDo3D.EnvironmentArt
 
             bool needsRoot = false;
 
-            // A classe base conta, singleton genérico costuma chamar o DontDestroyOnLoad por ela
             for (var current = type; current != null && current != typeof(MonoBehaviour); current = current.BaseType)
             {
                 string name = current.Name;
@@ -321,7 +307,6 @@ namespace IsaDo3D.EnvironmentArt
             return needsRoot;
         }
 
-        // DontDestroyOnLoad só funciona em objeto da raiz da cena, dentro de um grupo ele para de persistir
         internal static bool NeedsSceneRoot(GameObject go)
         {
             foreach (var behaviour in go.GetComponents<MonoBehaviour>())
@@ -393,7 +378,6 @@ namespace IsaDo3D.EnvironmentArt
             return current.gameObject;
         }
 
-        // Só sugere. Destination nulo é objeto sem regra, e nada se move antes de confirmar na janela
         private static List<(GameObject Object, string Destination)> PlanAutoOrganize()
         {
             return SceneManager.GetActiveScene().GetRootGameObjects()
@@ -402,7 +386,6 @@ namespace IsaDo3D.EnvironmentArt
                 .ToList();
         }
 
-        // Padrões, subgrupos de GAMEPLAY e os grupos personalizados que já estão na cena
         private static List<string> OrganizeDestinations()
         {
             var destinations = new List<string>();
@@ -432,7 +415,6 @@ namespace IsaDo3D.EnvironmentArt
             int moved = 0;
             foreach (var (go, destination) in moves)
             {
-                // A prévia pode estar velha: objeto apagado, de outra cena ou que já saiu da raiz
                 if (go == null || string.IsNullOrEmpty(destination)) continue;
                 if (go.scene != scene || go.transform.parent != null) continue;
 
@@ -447,7 +429,6 @@ namespace IsaDo3D.EnvironmentArt
             return moved;
         }
 
-        // O _02 é do asset, só o " (n)" é da Unity
         private static string BaseName(string name)
         {
             var match = Regex.Match(name.Trim(), @"^(.*?)(?:\s*\(\d+\))*$");
@@ -455,14 +436,12 @@ namespace IsaDo3D.EnvironmentArt
             return string.IsNullOrEmpty(baseName) ? name.Trim() : baseName;
         }
 
-        // Tira qualquer contador do fim, nos três esquemas de duplicata da Unity
         private static string Stem(string name)
         {
             var stem = Regex.Replace(name.Trim(), @"(?:\s*\(\d+\)|[._][0-9]+)+$", "");
             return string.IsNullOrEmpty(stem) ? name.Trim() : stem;
         }
 
-        // No esquema Prefab_1 a Unity troca o _01 do asset pelo contador, só o prefab de origem sabe o nome certo
         private static string BaseNameOf(GameObject go)
         {
             var fallback = BaseName(go.name);
@@ -471,12 +450,10 @@ namespace IsaDo3D.EnvironmentArt
             var assetPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(go);
             if (string.IsNullOrEmpty(assetPath)) return fallback;
 
-            // Nome trocado de propósito não volta pro nome do prefab
             var prefabName = Path.GetFileNameWithoutExtension(assetPath);
             return Stem(go.name) == Stem(prefabName) ? prefabName : fallback;
         }
 
-        // Tira os sufixos de duplicata da Unity e renumera a seleção. Quem chama é o botão da aba Organize
         private static void NormalizeSelectedNames()
         {
             var selection = SelectedSceneObjects()
@@ -490,7 +467,6 @@ namespace IsaDo3D.EnvironmentArt
 
             var groups = selection.GroupBy(BaseNameOf).ToList();
 
-            // Sem isso "Rock" + "Rock (1)" viram Rock_01 e batem com um Rock_01 que já existia
             var selected = new HashSet<GameObject>(selection);
             var taken = new HashSet<string>(selection
                 .GroupBy(go => (object)go.transform.parent ?? go.scene)
@@ -503,7 +479,6 @@ namespace IsaDo3D.EnvironmentArt
 
             int renamed = 0;
 
-            // Sozinho vem primeiro e reserva o nome base, se um irmão de fora da seleção já não tiver ele
             foreach (var sameBase in groups.OrderBy(g => g.Count()))
             {
                 var objects = sameBase.ToList();
@@ -514,7 +489,6 @@ namespace IsaDo3D.EnvironmentArt
                 {
                     string newName = sameBase.Key;
 
-                    // Sozinho e sem "(n)" fica como está, a ferramenta só mexe em quem tem sufixo
                     if (objects.Count == 1 && go.name == newName)
                     {
                         taken.Add(newName);
@@ -566,10 +540,19 @@ namespace IsaDo3D.EnvironmentArt
     [InitializeOnLoad]
     internal static class HierarchyHeaderRenderer
     {
-        // A cor aparece na Hierarchy exatamente como foi definida, sem misturar com o painel
         internal static Color HierarchyHeaderColor(string cleanName)
         {
-            return HeaderColor(cleanName);
+            return HierarchyViewPrefs.Adjust(HeaderColor(cleanName));
+        }
+
+        private static Color PanelColor =>
+            EditorGUIUtility.isProSkin ? new Color(0.22f, 0.22f, 0.22f) : new Color(0.76f, 0.76f, 0.76f);
+
+        private static Color OverPanel(Color background)
+        {
+            var mixed = Color.Lerp(PanelColor, background, background.a);
+            mixed.a = 1f;
+            return mixed;
         }
 
         private static GUIStyle _headerStyle;
@@ -580,13 +563,11 @@ namespace IsaDo3D.EnvironmentArt
             public Color Background;
             public bool HasBackground;
             public Color Text;
-            // Sem alinhamento escolhido cada Hierarchy usa o dela
             public TextAnchor? Anchor;
             public FontStyle Font;
             public string Tooltip;
         }
 
-        // Por nome do grupo, o Hierarchy repinta tudo por evento e isso montava strings por linha
         private static readonly Dictionary<string, HeaderLook> Looks = new Dictionary<string, HeaderLook>();
         private static bool _looksForProSkin;
 
@@ -609,7 +590,7 @@ namespace IsaDo3D.EnvironmentArt
                 CleanName = cleanName,
                 Background = background,
                 HasBackground = hasBackground,
-                Text = style?.Text ?? (hasBackground ? TextColorFor(background) : TitleColor),
+                Text = style?.Text ?? (hasBackground ? TextColorFor(OverPanel(background)) : TitleColor),
                 Anchor = style?.Align,
                 Font = style?.Font ?? FontStyle.Bold,
                 Tooltip = HierarchyOrganizerTool.TooltipFor(cleanName),
@@ -618,7 +599,6 @@ namespace IsaDo3D.EnvironmentArt
             return look;
         }
 
-        // Reaproveitados a cada linha, o Hierarchy repinta tudo por evento
         private static readonly GUIContent HeaderLabel = new GUIContent();
         private static readonly GUIContent GroupTip = new GUIContent(" ");
         private static readonly GUIContent ChildrenButtonTip = new GUIContent(" ");
@@ -627,9 +607,8 @@ namespace IsaDo3D.EnvironmentArt
             _childrenIcon ??= EditorGUIUtility.IconContent("UnityEditor.SceneHierarchyWindow").image;
 
         private static bool HeadersOn =>
-            IsaDo3DToolState.IsOn(ToolIds.HierarchyOrganizer) && IsaDo3DToolState.IsOn(ToolIds.HierarchyHeaders);
+            ArtToolsState.IsOn(ToolIds.HierarchyOrganizer) && ArtToolsState.IsOn(ToolIds.HierarchyHeaders);
 
-        // Na 6.4 virou EntityId e na 6.5 o antigo não compila
         static HierarchyHeaderRenderer()
         {
             HierarchyGroupColors.Changed += OnGroupColorsChanged;
@@ -640,7 +619,6 @@ namespace IsaDo3D.EnvironmentArt
             EditorApplication.hierarchyWindowItemOnGUI += OnHierarchyItemGUI;
 #endif
 #if UNITY_6000_5_OR_NEWER
-            // A Hierarchy nova (UI Toolkit) não chama o callback antigo
             UHE.HierarchyWindow.BindViewItem += OnBindViewItem;
             UHE.HierarchyWindow.UnbindViewItem += OnUnbindViewItem;
             Selection.selectionChanged += RepaintHeaderRows;
@@ -667,7 +645,6 @@ namespace IsaDo3D.EnvironmentArt
                 }
             }
 #else
-            // A Hierarchy antiga não tem API pública pra isso
             var windowType = typeof(Editor).Assembly.GetType("UnityEditor.SceneHierarchyWindow");
             var setExpanded = windowType?.GetMethod(
                 "SetExpanded",
@@ -688,7 +665,6 @@ namespace IsaDo3D.EnvironmentArt
             Looks.Clear();
             EditorApplication.RepaintHierarchyWindow();
 
-            // A Hierarchy nova só refaz o bind das linhas assim
             EditorApplication.DirtyHierarchyWindowSorting();
 #if UNITY_6000_5_OR_NEWER
             RepaintHeaderRows();
@@ -707,7 +683,6 @@ namespace IsaDo3D.EnvironmentArt
         }
 #endif
 
-        // Cabeçalho mais próximo acima do objeto, em qualquer profundidade
         private static GameObject FindHeaderAncestor(GameObject go)
         {
             for (var parent = go.transform.parent; parent != null; parent = parent.parent)
@@ -736,22 +711,20 @@ namespace IsaDo3D.EnvironmentArt
 
             if (!go.name.StartsWith(HierarchyOrganizerTool.HeaderPrefix))
             {
-                // Selecionado fica com o destaque da Unity
                 var owner = FindHeaderAncestor(go);
                 if (owner != null && !Selection.Contains(go)) EditorGUI.DrawRect(rect, ChildTint(owner));
                 return;
             }
 
             var look = LookFor(go.name);
-            // Sem fundo ainda precisa cobrir o nome de verdade, que tem os ---
-            EditorGUI.DrawRect(rect, look.HasBackground ? look.Background : RowCoverColor(go));
+            if (!look.HasBackground || look.Background.a < 1f) EditorGUI.DrawRect(rect, RowCoverColor(go));
+            if (look.HasBackground) EditorGUI.DrawRect(rect, look.Background);
 
             _headerStyle ??= new GUIStyle(EditorStyles.label);
             _headerStyle.alignment = look.Anchor ?? TextAnchor.MiddleCenter;
             _headerStyle.fontStyle = look.Font;
             _headerStyle.normal.textColor = look.Text;
 
-            // Se o label cobrir o botão os tooltips brigam
             HeaderLabel.text = look.CleanName;
             EditorGUI.LabelField(rect, HeaderLabel, _headerStyle);
             var groupTipRect = new Rect(rect.x, rect.y, rect.width - 30f, rect.height);
@@ -768,7 +741,7 @@ namespace IsaDo3D.EnvironmentArt
         {
             if (Selection.Contains(go))
                 return EditorGUIUtility.isProSkin ? new Color(0.17f, 0.36f, 0.53f) : new Color(0.23f, 0.45f, 0.69f);
-            return EditorGUIUtility.isProSkin ? new Color(0.22f, 0.22f, 0.22f) : new Color(0.76f, 0.76f, 0.76f);
+            return PanelColor;
         }
 
         private static Color SeparatorColor =>
@@ -779,10 +752,8 @@ namespace IsaDo3D.EnvironmentArt
 
         private static void DrawTitle(GameObject go, Rect rect)
         {
-            // De ponta a ponta, o rect da Unity começa só depois do recuo
             rect.xMin = 32f;
 
-            // Cobre o nome de verdade, que tem os ===
             Color cover;
             if (Selection.Contains(go))
                 cover = EditorGUIUtility.isProSkin ? new Color(0.17f, 0.36f, 0.53f) : new Color(0.23f, 0.45f, 0.69f);
@@ -835,7 +806,6 @@ namespace IsaDo3D.EnvironmentArt
                 GUI.Label(iconRect, "≡");
             GUI.color = prevColor;
 
-            // Sem o " " o tooltip não aparece, e a string só é montada com o mouse em cima
             ChildrenButtonTip.tooltip = hovering ? $"Select the {group.transform.childCount} object(s) in this group" : "";
             if (GUI.Button(buttonRect, ChildrenButtonTip, EditorStyles.label))
                 SelectChildren(group);
@@ -850,29 +820,26 @@ namespace IsaDo3D.EnvironmentArt
         }
 
 #if UNITY_6000_5_OR_NEWER
-        private const string HeaderClass = "isado3d-header";
-        private const string ChildrenButtonName = "isado3d-select-children";
-        private const string ChildrenIconName = "isado3d-select-children-icon";
-        private const string CleanNameLabelName = "isado3d-clean-name";
+        private const string HeaderClass = "arttools-header";
+        private const string ChildrenButtonName = "arttools-select-children";
+        private const string ChildrenIconName = "arttools-select-children-icon";
+        private const string CleanNameLabelName = "arttools-clean-name";
 
-        // A coluna congelada escurece o cabeçalho nas linhas listradas
         private const string FrozenCellClass = "unity-multi-column-view__cell--frozen";
 
-        // O fundo pintado na linha cobre o destaque de hover e seleção da Unity, então ele é refeito aqui
-        private static readonly Dictionary<UIE.VisualElement, GameObject> HeaderRows = new Dictionary<UIE.VisualElement, GameObject>();
+        private static readonly Dictionary<UIE.VisualElement, (GameObject Group, UIE.Label Name, UIE.Button Button)> HeaderRows =
+            new Dictionary<UIE.VisualElement, (GameObject Group, UIE.Label Name, UIE.Button Button)>();
         private static readonly List<UIE.VisualElement> DeadRows = new List<UIE.VisualElement>();
         private static UIE.VisualElement _hoveredRow;
 
-        // Marca na própria linha, assim sobrevive a sair e voltar do painel sem registrar duas vezes
-        private const string HoverWiredClass = "isado3d-hover-wired";
+        private const string HoverWiredClass = "arttools-hover-wired";
 
-        // Linhas de dentro de um grupo, com o objeto da linha e o cabeçalho que dá a cor
         private static readonly Dictionary<UIE.VisualElement, (GameObject Object, GameObject Group)> ChildRows =
             new Dictionary<UIE.VisualElement, (GameObject Object, GameObject Group)>();
 
-        private const string TreeLinesName = "isado3d-tree-lines";
-        private const string TitleBoxName = "isado3d-title";
-        private const string TitleLabelName = "isado3d-title-label";
+        private const string TreeLinesName = "arttools-tree-lines";
+        private const string TitleBoxName = "arttools-title";
+        private const string TitleLabelName = "arttools-title-label";
 
         private static UIE.VisualElement TitleRule()
         {
@@ -886,7 +853,6 @@ namespace IsaDo3D.EnvironmentArt
             return rule;
         }
 
-        // Não dá pra trocar o texto do Name, então o título é desenhado por cima dele
         private static void ShowTitle(UH.HierarchyViewItem item, UIE.VisualElement nameHost, UIE.VisualElement box, string rawName)
         {
             if (box == null)
@@ -913,10 +879,8 @@ namespace IsaDo3D.EnvironmentArt
                 box.Add(label);
                 box.Add(TitleRule());
 
-                // Na linha e não na célula do nome, pra ir de ponta a ponta
                 item.RowContainer.Add(box);
 
-                // Renomeando mostra o nome de verdade
                 var created = box;
                 nameHost.RegisterCallback<UIE.FocusInEvent>(e =>
                 {
@@ -935,7 +899,6 @@ namespace IsaDo3D.EnvironmentArt
             item.OverlayIcon.style.display = UIE.DisplayStyle.None;
         }
 
-        // Sem seta a Unity não informa a largura do recuo, então é o padrão da Hierarchy
         private const float FallbackIndent = 14f;
         private const float ArrowGap = 6f;
 
@@ -947,10 +910,8 @@ namespace IsaDo3D.EnvironmentArt
             public UIE.VisualElement Icon;
         }
 
-        // X da linha de cada nível, medido nas linhas já desenhadas, pra linha do avô passar no lugar certo
         private static readonly Dictionary<int, float> LineXByDepth = new Dictionary<int, float>();
 
-        // Linhas ligando os objetos ao grupo. Na busca a lista fica plana e não tem o que ligar
         private static void UpdateTreeLines(UH.HierarchyViewItem item, UH.HierarchyView view, GameObject go, GameObject group)
         {
             var row = item.RowContainer;
@@ -979,7 +940,6 @@ namespace IsaDo3D.EnvironmentArt
             lines.MarkDirtyRepaint();
         }
 
-        // Irmão novo ou reordenado muda quem é o último, e essas linhas não passam por bind de novo
         private static void RepaintTreeLines()
         {
             foreach (var row in ChildRows.Keys)
@@ -1015,7 +975,6 @@ namespace IsaDo3D.EnvironmentArt
             float middle = Crisp(height * 0.5f);
             float iconLeft = UIE.VisualElementExtensions.WorldToLocal(lines, new Vector2(iconBounds.xMin, 0f)).x;
 
-            // A linha desce pelo centro da coluna da seta
             float x = iconLeft - 9f;
             if (state.Toggle != null)
             {
@@ -1041,7 +1000,6 @@ namespace IsaDo3D.EnvironmentArt
             bool last = IsLastSibling(transform);
             if (transform.childCount > 0)
             {
-                // Com seta a linha abre espaço pra ela
                 painter.MoveTo(new Vector2(x, 0f));
                 painter.LineTo(new Vector2(x, middle - ArrowGap));
                 if (!last)
@@ -1058,7 +1016,6 @@ namespace IsaDo3D.EnvironmentArt
                 painter.LineTo(new Vector2(iconLeft - 2f, middle));
             }
 
-            // Níveis de cima que ainda têm irmão embaixo continuam descendo por esta linha
             int level = depth - 1;
             for (var ancestor = transform.parent;
                  ancestor != null && ancestor.gameObject != state.Group;
@@ -1076,7 +1033,6 @@ namespace IsaDo3D.EnvironmentArt
             painter.Stroke();
         }
 
-        // Selecionada ou com o mouse em cima volta pro visual da Unity, senão a cor cobria o destaque
         private static void PaintChildRow(UIE.VisualElement row, GameObject go, GameObject group)
         {
             bool native = go == null || group == null || row == _hoveredRow || Selection.Contains(go)
@@ -1091,7 +1047,6 @@ namespace IsaDo3D.EnvironmentArt
             var look = LookFor(group.name);
             if (!look.HasBackground)
             {
-                // Sem fundo a linha fica com o visual da Unity
                 row.style.backgroundColor = UIE.StyleKeyword.Null;
                 SetFrozenCellsTransparent(row, false);
                 return;
@@ -1104,7 +1059,18 @@ namespace IsaDo3D.EnvironmentArt
             SetFrozenCellsTransparent(row, true);
         }
 
-        // Linha sem painel é janela que fechou sem unbind
+        private static void PaintText(UIE.Label name, UIE.Button button, HeaderLook look)
+        {
+            name.style.color = look.Text;
+            name.style.unityTextAlign = look.Anchor ?? TextAnchor.MiddleLeft;
+            name.style.unityFontStyleAndWeight = look.Font;
+
+            button.style.color = look.Text;
+            button.style.backgroundColor = new Color(look.Text.r, look.Text.g, look.Text.b, 0.14f);
+            var childrenIcon = UIE.UQueryExtensions.Q<UIE.Image>(button, ChildrenIconName);
+            if (childrenIcon != null) childrenIcon.tintColor = look.Text;
+        }
+
         private static void RepaintHeaderRows()
         {
             DeadRows.Clear();
@@ -1116,7 +1082,11 @@ namespace IsaDo3D.EnvironmentArt
                     continue;
                 }
 
-                if (pair.Value != null) PaintRow(pair.Key, pair.Value);
+                var header = pair.Value;
+                if (header.Group == null) continue;
+
+                PaintRow(pair.Key, header.Group);
+                PaintText(header.Name, header.Button, LookFor(header.Group.name));
             }
 
             foreach (var row in DeadRows)
@@ -1140,9 +1110,9 @@ namespace IsaDo3D.EnvironmentArt
 
         private static void RepaintRow(UIE.VisualElement row)
         {
-            if (HeaderRows.TryGetValue(row, out var group))
+            if (HeaderRows.TryGetValue(row, out var header))
             {
-                if (group != null) PaintRow(row, group);
+                if (header.Group != null) PaintRow(row, header.Group);
             }
             else if (ChildRows.TryGetValue(row, out var child))
             {
@@ -1188,7 +1158,6 @@ namespace IsaDo3D.EnvironmentArt
             }
         }
 
-        // Refeito a cada bind porque a linha é reaproveitada
         private class GroupButtonState
         {
             public GameObject Group;
@@ -1208,7 +1177,6 @@ namespace IsaDo3D.EnvironmentArt
             return true;
         }
 
-        // Ao fechar seleciona o grupo, senão os filhos escondidos continuam selecionados
         private static void OnGroupButtonClicked(GroupButtonState state)
         {
             if (state == null || state.Group == null) return;
@@ -1231,7 +1199,6 @@ namespace IsaDo3D.EnvironmentArt
                 && (element is UIE.TextField || element.GetFirstAncestorOfType<UIE.TextField>() != null);
         }
 
-        // As linhas são recicladas, todo bind pinta ou desfaz
         private static void OnBindViewItem(UHE.HierarchyWindow window, UH.HierarchyView view, UH.HierarchyViewItem item)
         {
             GameObject go = null;
@@ -1241,19 +1208,16 @@ namespace IsaDo3D.EnvironmentArt
 
             var row = item.RowContainer;
             var button = UIE.UQueryExtensions.Q<UIE.Button>(item.RightCustomContainer, ChildrenButtonName);
-            // No pai do Name, a Hierarchy desloca esse contêiner no resize e a célula não acompanha
             var nameHost = item.Name.parent;
             if (nameHost == null) return;
 
             var cleanLabel = UIE.UQueryExtensions.Q<UIE.Label>(nameHost, CleanNameLabelName);
 
-            // A linha é reaproveitada, então o título some até o bind dizer que é título
             var titleBox = UIE.UQueryExtensions.Q<UIE.VisualElement>(row, TitleBoxName);
             if (titleBox != null) titleBox.style.display = UIE.DisplayStyle.None;
 
             if (go == null || !HeadersOn || !go.name.StartsWith(HierarchyOrganizerTool.HeaderPrefix))
             {
-                // Reseta sempre, o Name e o botão podem herdar o estilo de cabeçalho mesmo sem a classe no row
                 HeaderRows.Remove(row);
                 row.RemoveFromClassList(HeaderClass);
                 row.style.backgroundColor = UIE.StyleKeyword.Null;
@@ -1286,16 +1250,13 @@ namespace IsaDo3D.EnvironmentArt
             UpdateTreeLines(item, view, null, null);
             var look = LookFor(go.name);
             var cleanName = look.CleanName;
-            var text = look.Text;
 
             row.AddToClassList(HeaderClass);
-            HeaderRows[row] = go;
             WireHover(row);
             PaintRow(row, go);
             item.Icon.style.display = UIE.DisplayStyle.None;
             item.OverlayIcon.style.display = UIE.DisplayStyle.None;
 
-            // Não dá pra trocar o texto do Name, o renomear grava o que estiver nele e o grupo perde os ---
             if (cleanLabel == null)
             {
                 cleanLabel = new UIE.Label { name = CleanNameLabelName, pickingMode = UIE.PickingMode.Ignore };
@@ -1308,7 +1269,6 @@ namespace IsaDo3D.EnvironmentArt
                 cleanLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
                 nameHost.Add(cleanLabel);
 
-                // Renomeando mostra o nome de verdade. Só no campo de texto, clicar na linha também dá foco aqui
                 var created = cleanLabel;
                 nameHost.RegisterCallback<UIE.FocusInEvent>(e =>
                 {
@@ -1321,9 +1281,6 @@ namespace IsaDo3D.EnvironmentArt
             }
 
             cleanLabel.text = cleanName;
-            cleanLabel.style.color = text;
-            cleanLabel.style.unityTextAlign = look.Anchor ?? TextAnchor.MiddleLeft;
-            cleanLabel.style.unityFontStyleAndWeight = look.Font;
             cleanLabel.style.display = UIE.DisplayStyle.Flex;
             item.Name.style.visibility = UIE.Visibility.Hidden;
             nameHost.tooltip = look.Tooltip;
@@ -1358,7 +1315,6 @@ namespace IsaDo3D.EnvironmentArt
 
                 var created = button;
 
-                // Senão a Hierarchy entende como renomear o grupo
                 created.RegisterCallback<UIE.PointerDownEvent>(e => e.StopPropagation());
                 created.RegisterCallback<UIE.PointerUpEvent>(e => e.StopPropagation());
                 created.RegisterCallback<UIE.MouseDownEvent>(e => e.StopPropagation());
@@ -1371,10 +1327,8 @@ namespace IsaDo3D.EnvironmentArt
 
             button.userData = new GroupButtonState { Group = go, View = view, Node = node };
             button.tooltip = $"Select the {go.transform.childCount} object(s) in this group";
-            button.style.color = text;
-            var childrenIcon = UIE.UQueryExtensions.Q<UIE.Image>(button, ChildrenIconName);
-            if (childrenIcon != null) childrenIcon.tintColor = text;
-            button.style.backgroundColor = new Color(text.r, text.g, text.b, 0.14f);
+            PaintText(cleanLabel, button, look);
+            HeaderRows[row] = (go, cleanLabel, button);
             button.style.display = go.transform.childCount > 0 ? UIE.DisplayStyle.Flex : UIE.DisplayStyle.None;
         }
 #endif
@@ -1400,7 +1354,6 @@ namespace IsaDo3D.EnvironmentArt
                 : Color.HSVToRGB(h, s * 0.08f, 1f);
         }
 
-        // string.GetHashCode muda entre sessões
         private static uint StableHash(string s)
         {
             uint hash = 2166136261;
@@ -1410,64 +1363,164 @@ namespace IsaDo3D.EnvironmentArt
         }
     }
 
-    // Gosto de cada um, então fica no EditorPrefs e não vai pro Git
     internal static class HierarchyViewPrefs
     {
-        private const string TintKey = "IsaDo3D.Hierarchy.ChildTint";
-        private const string TintAlphaKey = "IsaDo3D.Hierarchy.ChildTintAlpha";
-        private const string LinesKey = "IsaDo3D.Hierarchy.TreeLines";
+        internal const string FilePath = "UserSettings/ArtToolsHierarchyView.json";
+
+        internal const string TintKey = "ArtTools.Hierarchy.ChildTint";
+        internal const string TintAlphaKey = "ArtTools.Hierarchy.ChildTintAlpha";
+        internal const string LinesKey = "ArtTools.Hierarchy.TreeLines";
+        private const string OpacityKey = "ArtTools.Hierarchy.BannerOpacity";
+        private const string SaturationKey = "ArtTools.Hierarchy.BannerSaturation";
+        private const string LightnessKey = "ArtTools.Hierarchy.BannerLightness";
 
         internal const float MinTintAlpha = 0.05f;
         internal const float MaxTintAlpha = 0.6f;
 
-        // Lido uma vez, a Hierarchy pergunta isso em toda linha
-        private static bool? _tint;
-        private static float? _tintAlpha;
-        private static bool? _lines;
+        internal const float MinOpacity = 0.15f;
+        internal const float MaxSaturation = 2f;
+        internal const float MaxLightness = 0.5f;
+
+        [System.Serializable]
+        private class Saved
+        {
+            public bool childTint = true;
+            public float childTintAlpha = 0.15f;
+            public bool treeLines = true;
+            public float opacity = 1f;
+            public float saturation = 1f;
+            public float lightness;
+        }
+
+        private static Saved _saved;
 
         internal static event System.Action Changed;
 
-        // Cor do cabeçalho nas linhas de dentro do grupo
+        private static Saved Current => _saved ??= Load();
+
+        private static Saved Load()
+        {
+            Saved loaded = null;
+            if (File.Exists(FilePath))
+            {
+                try
+                {
+                    loaded = JsonUtility.FromJson<Saved>(File.ReadAllText(FilePath));
+                }
+                catch (System.Exception e) when (e is IOException || e is System.ArgumentException)
+                {
+                    Debug.LogWarning($"[Hierarchy Organizer] Could not read {FilePath}: {e.Message}");
+                }
+            }
+
+            loaded ??= FromMachinePrefs();
+            loaded.childTintAlpha = Mathf.Clamp(loaded.childTintAlpha, MinTintAlpha, MaxTintAlpha);
+            loaded.opacity = Mathf.Clamp(loaded.opacity, MinOpacity, 1f);
+            loaded.saturation = Mathf.Clamp(loaded.saturation, 0f, MaxSaturation);
+            loaded.lightness = Mathf.Clamp(loaded.lightness, -MaxLightness, MaxLightness);
+            return loaded;
+        }
+
+        private static Saved FromMachinePrefs()
+        {
+            var defaults = new Saved();
+            return new Saved
+            {
+                childTint = EditorPrefs.GetBool(TintKey, defaults.childTint),
+                childTintAlpha = EditorPrefs.GetFloat(TintAlphaKey, defaults.childTintAlpha),
+                treeLines = EditorPrefs.GetBool(LinesKey, defaults.treeLines),
+                opacity = EditorPrefs.GetFloat(OpacityKey, defaults.opacity),
+                saturation = EditorPrefs.GetFloat(SaturationKey, defaults.saturation),
+                lightness = EditorPrefs.GetFloat(LightnessKey, defaults.lightness),
+            };
+        }
+
+        private static void Save()
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
+            File.WriteAllText(FilePath, JsonUtility.ToJson(Current, true) + "\n");
+            Changed?.Invoke();
+        }
+
+        private static void Store(ref bool saved, bool value)
+        {
+            if (saved == value) return;
+            saved = value;
+            Save();
+        }
+
+        private static void Store(ref float saved, float value)
+        {
+            if (Mathf.Approximately(saved, value)) return;
+            saved = value;
+            Save();
+        }
+
         internal static bool ChildTint
         {
-            get => _tint ??= EditorPrefs.GetBool(TintKey, true);
-            set
-            {
-                if (ChildTint == value) return;
-                _tint = value;
-                EditorPrefs.SetBool(TintKey, value);
-                Changed?.Invoke();
-            }
+            get => Current.childTint;
+            set => Store(ref Current.childTint, value);
         }
 
         internal static float ChildTintAlpha
         {
-            get => _tintAlpha ??= Mathf.Clamp(EditorPrefs.GetFloat(TintAlphaKey, 0.15f), MinTintAlpha, MaxTintAlpha);
-            set
-            {
-                value = Mathf.Clamp(value, MinTintAlpha, MaxTintAlpha);
-                if (Mathf.Approximately(ChildTintAlpha, value)) return;
-                _tintAlpha = value;
-                EditorPrefs.SetFloat(TintAlphaKey, value);
-                Changed?.Invoke();
-            }
+            get => Current.childTintAlpha;
+            set => Store(ref Current.childTintAlpha, Mathf.Clamp(value, MinTintAlpha, MaxTintAlpha));
         }
 
-        // Linhas ligando os objetos ao grupo
         internal static bool TreeLines
         {
-            get => _lines ??= EditorPrefs.GetBool(LinesKey, true);
-            set
-            {
-                if (TreeLines == value) return;
-                _lines = value;
-                EditorPrefs.SetBool(LinesKey, value);
-                Changed?.Invoke();
-            }
+            get => Current.treeLines;
+            set => Store(ref Current.treeLines, value);
+        }
+
+        internal static float BannerOpacity
+        {
+            get => Current.opacity;
+            set => Store(ref Current.opacity, Mathf.Clamp(value, MinOpacity, 1f));
+        }
+
+        internal static float BannerSaturation
+        {
+            get => Current.saturation;
+            set => Store(ref Current.saturation, Mathf.Clamp(value, 0f, MaxSaturation));
+        }
+
+        internal static float BannerLightness
+        {
+            get => Current.lightness;
+            set => Store(ref Current.lightness, Mathf.Clamp(value, -MaxLightness, MaxLightness));
+        }
+
+        internal static bool BannerAdjusted =>
+            BannerOpacity < 1f || !Mathf.Approximately(BannerSaturation, 1f) || !Mathf.Approximately(BannerLightness, 0f);
+
+        internal static void ResetBannerAdjust()
+        {
+            if (!BannerAdjusted) return;
+
+            Current.opacity = 1f;
+            Current.saturation = 1f;
+            Current.lightness = 0f;
+            Save();
+        }
+
+        internal static Color Adjust(Color color)
+        {
+            float gray = color.grayscale;
+            float saturation = BannerSaturation;
+            var adjusted = new Color(
+                Mathf.Clamp01(gray + (color.r - gray) * saturation),
+                Mathf.Clamp01(gray + (color.g - gray) * saturation),
+                Mathf.Clamp01(gray + (color.b - gray) * saturation));
+
+            float lightness = BannerLightness;
+            adjusted = Color.Lerp(adjusted, lightness < 0f ? Color.black : Color.white, Mathf.Abs(lightness));
+            adjusted.a = BannerOpacity;
+            return adjusted;
         }
     }
 
-    // O que dá pra escolher num cabeçalho. O que fica sem valor usa o padrão
     internal class BannerStyle
     {
         public Color? Background;
@@ -1484,10 +1537,9 @@ namespace IsaDo3D.EnvironmentArt
         }
     }
 
-    // Fica em ProjectSettings, que vai pro Git, então o estilo escolhido é igual pra todo mundo
     internal static class HierarchyGroupColors
     {
-        internal const string FilePath = "ProjectSettings/IsaDo3DHierarchyColors.json";
+        internal const string FilePath = "UserSettings/ArtToolsHierarchyColors.json";
 
         [System.Serializable]
         private class Entry
@@ -1517,28 +1569,8 @@ namespace IsaDo3D.EnvironmentArt
         };
 
         private static Dictionary<string, BannerStyle> _styles;
-        private static System.DateTime _loadedStamp;
 
         internal static event System.Action Changed;
-
-#if UNITY_2022_3_OR_NEWER
-        // Pull do Git troca o arquivo com a Unity aberta
-        [InitializeOnLoadMethod]
-        private static void WatchFile()
-        {
-            EditorApplication.focusChanged += focused =>
-            {
-                if (!focused || _styles == null || FileStamp() == _loadedStamp) return;
-                _styles = null;
-                Changed?.Invoke();
-            };
-        }
-#endif
-
-        private static System.DateTime FileStamp()
-        {
-            return File.Exists(FilePath) ? File.GetLastWriteTimeUtc(FilePath) : default;
-        }
 
         private static Color? ParseColor(string hex)
         {
@@ -1558,7 +1590,6 @@ namespace IsaDo3D.EnvironmentArt
                 if (_styles != null) return _styles;
 
                 _styles = new Dictionary<string, BannerStyle>();
-                _loadedStamp = FileStamp();
                 if (!File.Exists(FilePath)) return _styles;
 
                 try
@@ -1624,12 +1655,25 @@ namespace IsaDo3D.EnvironmentArt
             Save();
         }
 
+        internal static void SetBackgrounds(List<string> cleanNames, System.Func<int, Color> backgroundAt)
+        {
+            for (int i = 0; i < cleanNames.Count; i++)
+            {
+                var key = HierarchyOrganizerTool.CanonicalGroupKey(cleanNames[i]);
+                if (!Styles.TryGetValue(key, out var style)) Styles[key] = style = new BannerStyle();
+
+                style.Background = Opaque(backgroundAt(i));
+                style.Text = null;
+            }
+
+            Save();
+        }
+
         internal static void Clear(string cleanName)
         {
             if (Styles.Remove(HierarchyOrganizerTool.CanonicalGroupKey(cleanName))) Save();
         }
 
-        // Renomear o grupo leva o estilo junto, se o nome novo ainda não tiver um
         internal static void CopyIfMissing(string fromCleanName, string toCleanName)
         {
             var from = HierarchyOrganizerTool.CanonicalGroupKey(fromCleanName);
@@ -1659,31 +1703,23 @@ namespace IsaDo3D.EnvironmentArt
 
         private static void Save()
         {
-            // Sem estilo escolhido o arquivo some, pra não sobrar um JSON vazio no Git
-            if (_styles.Count == 0)
+            var data = new Data();
+            foreach (var pair in _styles.OrderBy(p => p.Key, System.StringComparer.Ordinal))
             {
-                if (File.Exists(FilePath)) File.Delete(FilePath);
-            }
-            else
-            {
-                var data = new Data();
-                foreach (var pair in _styles.OrderBy(p => p.Key, System.StringComparer.Ordinal))
+                var style = pair.Value;
+                data.groups.Add(new Entry
                 {
-                    var style = pair.Value;
-                    data.groups.Add(new Entry
-                    {
-                        name = pair.Key,
-                        color = ColorText(style.Background),
-                        noBackground = style.NoBackground,
-                        textColor = ColorText(style.Text),
-                        align = style.Align.HasValue ? AlignNames.First(a => a.Value == style.Align.Value).Key : "",
-                        font = style.Font.HasValue ? FontNames.First(f => f.Value == style.Font.Value).Key : "",
-                    });
-                }
-                File.WriteAllText(FilePath, JsonUtility.ToJson(data, true) + "\n");
+                    name = pair.Key,
+                    color = ColorText(style.Background),
+                    noBackground = style.NoBackground,
+                    textColor = ColorText(style.Text),
+                    align = style.Align.HasValue ? AlignNames.First(a => a.Value == style.Align.Value).Key : "",
+                    font = style.Font.HasValue ? FontNames.First(f => f.Value == style.Font.Value).Key : "",
+                });
             }
 
-            _loadedStamp = FileStamp();
+            Directory.CreateDirectory(Path.GetDirectoryName(FilePath));
+            File.WriteAllText(FilePath, JsonUtility.ToJson(data, true) + "\n");
             Changed?.Invoke();
         }
     }

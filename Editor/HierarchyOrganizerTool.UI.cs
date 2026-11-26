@@ -6,11 +6,10 @@ using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UIElements;
-using static IsaDo3D.EnvironmentArt.IsaDo3DStyles;
+using static ArtTools.EnvironmentArt.ArtToolsStyles;
 
-namespace IsaDo3D.EnvironmentArt
+namespace ArtTools.EnvironmentArt
 {
-    // A janela. As ações ficam no outro arquivo desta classe
     public partial class HierarchyOrganizerTool
     {
         private static readonly List<string> AlignLabels = new List<string> { "Left", "Center", "Right" };
@@ -28,10 +27,92 @@ namespace IsaDo3D.EnvironmentArt
         private const int LintTab = 2;
         private static readonly string[] TabNames = { "Organize", "Banner", "Lint" };
 
-        private static readonly Color[] QuickColors =
+        private class ColorPreset
         {
-            Hex(0x3D64C7), Hex(0x4B8F27), Hex(0xBB7723), Hex(0x7137A5), Hex(0xB85B88),
-            Hex(0x539BA5), Hex(0xB74843), Hex(0xB1992F), Hex(0x6E6E6E), Hex(0x3F3F46),
+            public string Name;
+            public Color[] Colors;
+
+            public Color ColorAt(int index, int count)
+            {
+                if (count < 2 || count > Colors.Length) return Colors[index % Colors.Length];
+                return Colors[Mathf.RoundToInt(index * (Colors.Length - 1) / (float)(count - 1))];
+            }
+        }
+
+        private static readonly ColorPreset[] ColorPresets =
+        {
+            new ColorPreset
+            {
+                Name = "Grayscale",
+                Colors = new[]
+                {
+                    Hex(0x1C1C1C), Hex(0x303030), Hex(0x474747), Hex(0x5E5E5E),
+                    Hex(0x707070), Hex(0xBDBDBD), Hex(0xD6D6D6), Hex(0xEDEDED),
+                },
+            },
+            new ColorPreset
+            {
+                Name = "Blue",
+                Colors = new[]
+                {
+                    Hex(0x162239), Hex(0x23385C), Hex(0x324D7C), Hex(0x43649F),
+                    Hex(0x577EC2), Hex(0xA6C2F4), Hex(0xC2D6F8), Hex(0xDBE7FB),
+                },
+            },
+            new ColorPreset
+            {
+                Name = "Green",
+                Colors = new[]
+                {
+                    Hex(0x112C17), Hex(0x1B4626), Hex(0x266035), Hex(0x347D46),
+                    Hex(0x469B5B), Hex(0x94DAA6), Hex(0xB4E7C1), Hex(0xD2F2DA),
+                },
+            },
+            new ColorPreset
+            {
+                Name = "Red",
+                Colors = new[]
+                {
+                    Hex(0x3F1413), Hex(0x66211F), Hex(0x8A2F2C), Hex(0xB0403C),
+                    Hex(0xD9534E), Hex(0xF9A7A4), Hex(0xFBC3C1), Hex(0xFCDCDB),
+                },
+            },
+            new ColorPreset
+            {
+                Name = "Orange",
+                Colors = new[]
+                {
+                    Hex(0x381B07), Hex(0x5B2B0B), Hex(0x7B3C11), Hex(0x9F4F19),
+                    Hex(0xCB6A29), Hex(0xF6AF80), Hex(0xFAC9A8), Hex(0xFBDFCD),
+                },
+            },
+            new ColorPreset
+            {
+                Name = "Color blind",
+                Colors = new[]
+                {
+                    Hex(0x3D3069), Hex(0x5F92CD), Hex(0x662E41), Hex(0x7E9745),
+                    Hex(0x6E5FD1), Hex(0x9F8374), Hex(0x30662E), Hex(0xAD5186),
+                },
+            },
+            new ColorPreset
+            {
+                Name = "Synthwave",
+                Colors = new[]
+                {
+                    Hex(0xB0894A), Hex(0xC4704A), Hex(0xD0558C), Hex(0xA84585),
+                    Hex(0x7446A8), Hex(0x3F2E6B), Hex(0x4C66BF), Hex(0x4298A6),
+                },
+            },
+            new ColorPreset
+            {
+                Name = "Rainbow",
+                Colors = new[]
+                {
+                    Hex(0xD93636), Hex(0xDB6F16), Hex(0xF2C91D), Hex(0x3FA34D),
+                    Hex(0x1FA3A3), Hex(0x2F6FDE), Hex(0x7A3FD1), Hex(0xD13FA8),
+                },
+            },
         };
 
         private static readonly System.Text.RegularExpressions.Regex DefaultUnityName =
@@ -48,7 +129,6 @@ namespace IsaDo3D.EnvironmentArt
 
         [SerializeField] private int _tab;
 
-        // Estilo fica num arquivo e não passa pelo Ctrl+Z da Unity, então a aba guarda os próprios passos
         private class UndoStep
         {
             public string Label;
@@ -81,7 +161,6 @@ namespace IsaDo3D.EnvironmentArt
         private readonly List<AutoRow> _autoRows = new List<AutoRow>();
         private VisualElement _autoBatch;
 
-        // De onde parte o Shift+clique, nas caixas e nos nomes
         private int _autoCheckAnchor = -1;
         private int _autoNameAnchor = -1;
         private Label _autoNote;
@@ -108,10 +187,13 @@ namespace IsaDo3D.EnvironmentArt
         private Label _previewBanner;
         private VisualElement _previewChild;
         private Label _previewHint;
-        private VisualElement _quickColors;
 
         private Toggle _tintToggle;
         private Slider _tintSlider;
+        private Slider _opacitySlider;
+        private Slider _saturationSlider;
+        private Slider _lightnessSlider;
+        private Button _resetAdjustButton;
         private Toggle _linesToggle;
 
         private Label _lintScene;
@@ -140,16 +222,12 @@ namespace IsaDo3D.EnvironmentArt
             Refresh();
         }
 
-        // ---------- Montagem ----------
-
-        // As peças de visual (cartão, botão, cores) ficam no IsaDo3DStyles, iguais pra todas as janelas
         private void CreateGUI()
         {
             minSize = new Vector2(MinWidth, MinHeight);
 
             _page = Page(rootVisualElement);
 
-            // Tudo dentro de um elemento só, é a altura dele que a janela copia, igual na janela de Settings
             var page = new VisualElement();
             _body = page;
             page.RegisterCallback<GeometryChangedEvent>(FitHeight);
@@ -170,15 +248,11 @@ namespace IsaDo3D.EnvironmentArt
         private const float MinHeight = 320f;
         private const float AnySize = 4000f;
 
-        // Teto do que a janela pode ter de borda, pro ajuste de altura nunca crescer sem parar
         private const float MaxChrome = 60f;
 
         private VisualElement _page;
         private VisualElement _body;
 
-        // Solta, a janela fica da altura da aba aberta, até 85% da Unity; passou disso, rola. Só pelo minSize e
-        // maxSize, porque escrever no position joga a janela pro canto da tela. Encaixada num painel ela não
-        // manda na própria altura, então volta a aceitar qualquer tamanho
         private void FitHeight(GeometryChangedEvent e)
         {
             if (docked)
@@ -197,13 +271,11 @@ namespace IsaDo3D.EnvironmentArt
 
             content = Mathf.Min(content, EditorGUIUtility.GetMainWindowPosition().height * 0.85f);
 
-            // Travada, a janela tem a altura do minSize, e o que ela mostra a menos que isso é borda
             bool locked = Mathf.Abs(minSize.y - maxSize.y) < 1f;
             float height = Mathf.Ceil(locked ? minSize.y + content - view : content);
             height = Mathf.Clamp(height, content, content + MaxChrome);
             if (locked && Mathf.Abs(minSize.y - height) < 1f) return;
 
-            // Mínimo acima do máximo antigo trava a janela, então quem cresce sobe o máximo antes
             if (height > maxSize.y) maxSize = new Vector2(AnySize, height);
             minSize = new Vector2(MinWidth, height);
             maxSize = new Vector2(AnySize, height);
@@ -382,8 +454,6 @@ namespace IsaDo3D.EnvironmentArt
             return page;
         }
 
-        // ---------- Auto organize ----------
-
         private void BuildAutoPreview()
         {
             _autoRows.Clear();
@@ -405,7 +475,6 @@ namespace IsaDo3D.EnvironmentArt
 
             BuildAutoBatch(destinations);
 
-            // Com sugestão primeiro, o que não tem regra fica no fim e desmarcado
             foreach (var (go, suggestion) in plan.OrderBy(p => p.Destination == null))
             {
                 var entry = new AutoRow { Object = go };
@@ -418,7 +487,6 @@ namespace IsaDo3D.EnvironmentArt
                 var check = new Toggle { value = suggestion != null };
                 check.style.marginRight = 4f;
 
-                // O Toggle da Unity ignora clique com Shift apertado, então esse clique é tratado aqui
                 check.RegisterCallback<PointerDownEvent>(e =>
                 {
                     if (e.button != 0 || !e.shiftKey) return;
@@ -438,24 +506,20 @@ namespace IsaDo3D.EnvironmentArt
                 name.style.overflow = Overflow.Hidden;
                 name.style.color = suggestion != null ? TextColor : MutedColor;
 
-                // Clickable também ignora clique com Shift ou Ctrl, o ClickEvent não
                 name.RegisterCallback<ClickEvent>(e => OnAutoNameClick(entry, e));
                 row.Add(name);
 
                 int index = suggestion != null ? Mathf.Max(0, destinations.IndexOf(suggestion)) : 0;
-                // Subgrupo aparece recuado embaixo do grupo dele, sem submenu
                 var destination = new DropdownPill(destinations, index)
                 {
                     MenuLabel = DestinationMenuLabel,
                     FieldLabel = DestinationFieldLabel,
 
-                    // Escolher o grupo que a linha já tem ainda serve pra passar ele pras outras selecionadas
                     AlwaysNotify = true,
                 };
                 destination.style.width = 170f;
                 destination.style.flexShrink = 0f;
 
-                // Escolher um grupo já é querer mover
                 destination.Changed += value => OnAutoDestination(entry, value);
                 row.Add(destination);
 
@@ -470,7 +534,6 @@ namespace IsaDo3D.EnvironmentArt
             UpdateAutoCount();
         }
 
-        // Em cima da lista: marcar tudo ou nada, e dar o mesmo grupo a todas as linhas marcadas de uma vez
         private void BuildAutoBatch(List<string> destinations)
         {
             var hint = Note("Shift-click a checkbox to mark a range. The range turns blue, and a group picked on one blue row goes to all of them.");
@@ -485,7 +548,6 @@ namespace IsaDo3D.EnvironmentArt
             spacer.style.flexGrow = 1f;
             row.Add(spacer);
 
-            // O campo fechado mostra sempre o que ele faz, não a última escolha
             var setMarked = new DropdownPill(destinations, 0)
             {
                 MenuLabel = DestinationMenuLabel,
@@ -511,7 +573,6 @@ namespace IsaDo3D.EnvironmentArt
             UpdateAutoCount();
         }
 
-        // Linha desmarcada em lote não fica azul: sai da seleção da cena, que é de onde o azul vem
         private static void DeselectAuto(List<AutoRow> rows)
         {
             var leaving = new HashSet<Object>(rows.Where(r => r.Object != null).Select(r => (Object)r.Object));
@@ -519,10 +580,8 @@ namespace IsaDo3D.EnvironmentArt
             if (staying.Length != Selection.objects.Length) Selection.objects = staying;
         }
 
-        // Linha selecionada é a do objeto selecionado na cena, então selecionar na Hierarchy também vale
         private static bool IsAutoSelected(AutoRow row) => row.Object != null && Selection.Contains(row.Object);
 
-        // As outras linhas selecionadas junto com esta; vazio quando ela mesma não está selecionada
         private List<AutoRow> AutoSelectedWith(AutoRow row)
         {
             return IsAutoSelected(row)
@@ -568,8 +627,6 @@ namespace IsaDo3D.EnvironmentArt
             _autoNameAnchor = index;
         }
 
-        // Shift+clique marca ou desmarca dali até a última caixa clicada. Sem Shift, numa linha selecionada,
-        // vale pra todas as selecionadas
         private void OnAutoCheck(AutoRow row, bool value, bool shift)
         {
             int index = _autoRows.IndexOf(row);
@@ -580,8 +637,6 @@ namespace IsaDo3D.EnvironmentArt
                 int to = Mathf.Max(_autoCheckAnchor, index);
                 for (int i = from; i <= to; i++) _autoRows[i].Check.SetValueWithoutNotify(value);
 
-                // Quem marca um intervalo quer mexer nele junto: as linhas ficam selecionadas, e aí o grupo
-                // escolhido em uma delas vale pra todas
                 var range = _autoRows.Skip(from).Take(to - from + 1).ToList();
                 if (value)
                     Selection.objects = range.Where(r => r.Object != null).Select(r => (Object)r.Object).ToArray();
@@ -593,7 +648,6 @@ namespace IsaDo3D.EnvironmentArt
                 var others = AutoSelectedWith(row);
                 foreach (var other in others) other.Check.SetValueWithoutNotify(value);
 
-                // Desmarcou o grupo selecionado inteiro, então ele deixa de estar selecionado
                 if (!value && others.Count > 0)
                 {
                     others.Add(row);
@@ -658,7 +712,6 @@ namespace IsaDo3D.EnvironmentArt
 
         private VisualElement BuildBannerPage()
         {
-            // Com a janela estreita a coluna da direita desce
             var page = new VisualElement();
             page.style.flexDirection = FlexDirection.Row;
             page.style.flexWrap = Wrap.Wrap;
@@ -677,7 +730,8 @@ namespace IsaDo3D.EnvironmentArt
 
             left.Add(BuildBannerCard());
             right.Add(BuildPreviewCard());
-            right.Add(BuildQuickColorsCard());
+            right.Add(BuildPresetsCard());
+            right.Add(BuildAdjustCard());
             right.Add(BuildViewCard());
 
             page.Add(left);
@@ -738,7 +792,6 @@ namespace IsaDo3D.EnvironmentArt
             layoutRow.style.marginLeft = 3f;
             layoutRow.style.marginRight = 3f;
 
-            // Mesma largura do rótulo dos outros campos, que a Unity só define depois do layout
             var layoutLabel = new Label("Layout");
             layoutLabel.style.color = TextColor;
             layoutLabel.style.minWidth = 120f;
@@ -769,7 +822,6 @@ namespace IsaDo3D.EnvironmentArt
             layoutRow.Add(_fontField);
             _styleFields.Add(layoutRow);
 
-            // Fora dos campos de estilo, o separador não tem estilo mas tem o Undo do rename
             var actions = Row();
             actions.style.marginTop = 10f;
             _actionsRow = actions;
@@ -787,7 +839,7 @@ namespace IsaDo3D.EnvironmentArt
                 foreach (var name in SelectedBannerNames())
                     HierarchyGroupColors.Clear(name);
             });
-            _resetButton.tooltip = "Styles are saved by banner name and shared with the team.";
+            _resetButton.tooltip = "Styles are saved by banner name, just for you.";
             _resetButton.style.flexGrow = 1f;
             _resetButton.style.flexBasis = 0f;
             actions.Add(_resetButton);
@@ -838,41 +890,87 @@ namespace IsaDo3D.EnvironmentArt
             return card;
         }
 
-        private VisualElement BuildQuickColorsCard()
+        private VisualElement BuildPresetsCard()
         {
-            var card = Card("Quick recolor", "click to paint the selection", out _);
+            var card = Card("Color presets", "paints every banner", out _);
 
-            _quickColors = new VisualElement();
-            const int columns = 5;
-            for (int start = 0; start < QuickColors.Length; start += columns)
-            {
-                var row = Row();
-                for (int i = start; i < start + columns && i < QuickColors.Length; i++)
-                {
-                    var color = QuickColors[i];
-                    var swatch = new Button(() => EditSelected("recolor", s =>
-                    {
-                        s.NoBackground = false;
-                        s.Background = color;
-                    }));
-                    swatch.style.backgroundColor = color;
-                    swatch.style.flexGrow = 1f;
-                    swatch.style.flexBasis = 0f;
-                    swatch.style.height = 22f;
-                    Border(swatch, 0f, Color.clear);
-                    Radius(swatch, 4f);
-                    Margin(swatch, 2f);
-                    HoverFeedback(swatch);
-                    row.Add(swatch);
-                }
-                _quickColors.Add(row);
-            }
+            var grid = new VisualElement();
+            grid.style.flexDirection = FlexDirection.Row;
+            grid.style.flexWrap = Wrap.Wrap;
+            grid.style.marginLeft = -3f;
+            grid.style.marginRight = -3f;
+            grid.style.marginBottom = -3f;
 
-            card.Add(_quickColors);
+            foreach (var preset in ColorPresets)
+                grid.Add(BuildPresetTile(preset));
+
+            card.Add(grid);
             return card;
         }
 
-        // Gosto de cada um, não entra no arquivo compartilhado
+        private VisualElement BuildPresetTile(ColorPreset preset)
+        {
+            var tile = new VisualElement();
+
+            tile.style.flexBasis = Length.Percent(40f);
+            tile.style.flexGrow = 1f;
+            tile.style.backgroundColor = InsetColor;
+            Margin(tile, 3f);
+            Padding(tile, 6f, 6f);
+            Radius(tile, 6f);
+            tile.AddManipulator(new Clickable(() => ApplyPreset(preset)));
+            HoverFeedback(tile);
+
+            var palette = Row();
+            palette.pickingMode = PickingMode.Ignore;
+            palette.style.height = 22f;
+            palette.style.overflow = Overflow.Hidden;
+            Radius(palette, 5f);
+            foreach (var color in preset.Colors)
+            {
+                var tone = new VisualElement { pickingMode = PickingMode.Ignore };
+                tone.style.flexGrow = 1f;
+                tone.style.height = 22f;
+                tone.style.backgroundColor = color;
+                palette.Add(tone);
+            }
+            tile.Add(palette);
+
+            var name = new Label(preset.Name) { pickingMode = PickingMode.Ignore };
+            name.style.fontSize = 11f;
+            name.style.unityFontStyleAndWeight = FontStyle.Bold;
+            name.style.color = TextColor;
+            name.style.marginTop = 5f;
+            name.style.marginLeft = 1f;
+            tile.Add(name);
+
+            return tile;
+        }
+
+        private VisualElement BuildAdjustCard()
+        {
+            var card = Card("Banner colors", "only you", out _);
+
+            _opacitySlider = new Slider("Opacity", HierarchyViewPrefs.MinOpacity, 1f);
+            _opacitySlider.RegisterValueChangedCallback(e => HierarchyViewPrefs.BannerOpacity = e.newValue);
+            card.Add(_opacitySlider);
+
+            _saturationSlider = new Slider("Saturation", 0f, HierarchyViewPrefs.MaxSaturation);
+            _saturationSlider.RegisterValueChangedCallback(e => HierarchyViewPrefs.BannerSaturation = e.newValue);
+            card.Add(_saturationSlider);
+
+            _lightnessSlider = new Slider("Lightness", -HierarchyViewPrefs.MaxLightness, HierarchyViewPrefs.MaxLightness);
+            _lightnessSlider.RegisterValueChangedCallback(e => HierarchyViewPrefs.BannerLightness = e.newValue);
+            card.Add(_lightnessSlider);
+
+            _resetAdjustButton = FlatButton("Reset", false, HierarchyViewPrefs.ResetBannerAdjust);
+            _resetAdjustButton.tooltip = "Shows the colors as they were picked.";
+            _resetAdjustButton.style.marginTop = 6f;
+            card.Add(_resetAdjustButton);
+
+            return card;
+        }
+
         private VisualElement BuildViewCard()
         {
             var card = Card("Objects inside groups", "only you", out _);
@@ -904,8 +1002,6 @@ namespace IsaDo3D.EnvironmentArt
             return page;
         }
 
-        // ---------- Seleção ----------
-
         private static GameObject Target()
         {
             var target = Selection.activeGameObject;
@@ -917,7 +1013,6 @@ namespace IsaDo3D.EnvironmentArt
             return go != null && go.scene.IsValid() && go.name.StartsWith(HeaderPrefix);
         }
 
-        // Um por nome, dois grupos com o mesmo nome dividem o estilo
         private static List<string> SelectedBannerNames()
         {
             return Selection.gameObjects
@@ -938,11 +1033,36 @@ namespace IsaDo3D.EnvironmentArt
                 HierarchyGroupColors.Edit(name, change);
         }
 
+        private static List<string> SceneBannerNames()
+        {
+            return SceneManager.GetActiveScene().GetRootGameObjects()
+                .SelectMany(root => root.GetComponentsInChildren<Transform>(true))
+                .Where(t => t.name.StartsWith(HeaderPrefix))
+                .Select(t => CleanName(t.name))
+                .GroupBy(CanonicalGroupKey)
+                .Select(sameName => sameName.First())
+                .Where(name => HierarchyGroupColors.Get(name)?.NoBackground != true)
+                .ToList();
+        }
+
+        private void ApplyPreset(ColorPreset preset)
+        {
+            var names = SceneBannerNames();
+            if (names.Count == 0)
+            {
+                Debug.Log("[Hierarchy Organizer] No banners with a background in this scene to paint.");
+                return;
+            }
+
+            PushUndo("preset");
+            HierarchyGroupColors.SetBackgrounds(names, index => preset.ColorAt(index, names.Count));
+            Debug.Log($"[Hierarchy Organizer] Painted {names.Count} banner(s) with the {preset.Name} preset.");
+        }
+
         private void PushUndo(string label, GameObject renamed = null, string oldName = null)
         {
             double now = EditorApplication.timeSinceStartup;
 
-            // Arrastar no seletor de cor manda dezenas de mudanças, e elas contam como um passo só
             if (renamed == null && _undoSteps.Count > 0)
             {
                 var last = _undoSteps[_undoSteps.Count - 1];
@@ -1013,7 +1133,6 @@ namespace IsaDo3D.EnvironmentArt
             Refresh();
         }
 
-        // oldCleanName nulo é objeto comum virando banner
         private void RenameBanner(GameObject target, string oldCleanName, string newCleanName)
         {
             if (string.IsNullOrEmpty(newCleanName)) return;
@@ -1029,13 +1148,11 @@ namespace IsaDo3D.EnvironmentArt
             Refresh();
         }
 
-        // Sempre na raiz, é onde ficam os grupos que ele separa
         private void AddGroup()
         {
             string clean = CleanName(_groupName.value ?? "");
             if (clean.Length == 0) return;
 
-            // Dois grupos com o mesmo nome dividiriam o estilo e confundiriam o Auto organize
             var existing = FindHeaderGroups()
                 .FirstOrDefault(g => CanonicalGroupKey(CleanName(g.name)) == CanonicalGroupKey(clean));
             if (existing != null)
@@ -1086,8 +1203,6 @@ namespace IsaDo3D.EnvironmentArt
         {
             return $"{TitlePrefix} {cleanTitle} {TitlePrefix}";
         }
-
-        // ---------- Atualização ----------
 
         private void Refresh()
         {
@@ -1163,9 +1278,6 @@ namespace IsaDo3D.EnvironmentArt
             Show(_previewChild, isBanner);
             Show(_previewHint, !isBanner);
 
-            bool anyBanner = SelectedBannerNames().Count > 0;
-            _quickColors.SetEnabled(anyBanner);
-
             Show(_titleField, isBanner || isTitle);
             Show(_actionsRow, isBanner || isTitle);
             _undoButton.SetEnabled(_undoSteps.Count > 0);
@@ -1181,7 +1293,7 @@ namespace IsaDo3D.EnvironmentArt
 
             _titleField.SetValueWithoutNotify(cleanName);
             _backgroundToggle.SetValueWithoutNotify(look.HasBackground);
-            _backgroundColor.SetValueWithoutNotify(look.Background);
+            _backgroundColor.SetValueWithoutNotify(HierarchyHeaderRenderer.HeaderColor(cleanName));
             _backgroundColor.SetEnabled(look.HasBackground);
             _textColor.SetValueWithoutNotify(look.Text);
             _autoTextButton.SetEnabled(style?.Text != null);
@@ -1211,6 +1323,11 @@ namespace IsaDo3D.EnvironmentArt
             _tintSlider.SetValueWithoutNotify(HierarchyViewPrefs.ChildTintAlpha);
             _tintSlider.SetEnabled(HierarchyViewPrefs.ChildTint);
             _linesToggle.SetValueWithoutNotify(HierarchyViewPrefs.TreeLines);
+
+            _opacitySlider.SetValueWithoutNotify(HierarchyViewPrefs.BannerOpacity);
+            _saturationSlider.SetValueWithoutNotify(HierarchyViewPrefs.BannerSaturation);
+            _lightnessSlider.SetValueWithoutNotify(HierarchyViewPrefs.BannerLightness);
+            _resetAdjustButton.SetEnabled(HierarchyViewPrefs.BannerAdjusted);
         }
 
         private void RefreshLint()
@@ -1272,9 +1389,6 @@ namespace IsaDo3D.EnvironmentArt
             }
         }
 
-        // ---------- Lint ----------
-
-        // Só a raiz da cena ativa e os filhos diretos dos grupos, varrer a cena inteira a cada mudança ficaria pesado
         private static List<LintIssue> FindIssues(Scene scene)
         {
             var issues = new List<LintIssue>();
@@ -1361,7 +1475,6 @@ namespace IsaDo3D.EnvironmentArt
                 }
             }
 
-            // Cena sem nenhum grupo ainda não usa a organização, então não cobra os padrão
             if (banners.Count > 0)
             {
                 var missing = MissingDefaultGroups();
@@ -1389,7 +1502,6 @@ namespace IsaDo3D.EnvironmentArt
                 }
             }
 
-            // Raiz e filhos diretos dos grupos, mais fundo que isso pesa a cada mudança na cena
             var defaultNamed = roots
                 .Concat(banners.SelectMany(b => b.transform.Cast<Transform>().Select(t => t.gameObject)))
                 .Where(go => DefaultUnityName.IsMatch(go.name))
@@ -1403,7 +1515,6 @@ namespace IsaDo3D.EnvironmentArt
                 });
             }
 
-            // Só os filhos diretos dos grupos, é onde o Auto organize e o Move colocam as coisas
             var rootOnly = banners
                 .SelectMany(b => b.transform.Cast<Transform>().Select(t => t.gameObject))
                 .Where(NeedsSceneRoot)
@@ -1448,7 +1559,6 @@ namespace IsaDo3D.EnvironmentArt
             EditorApplication.DirtyHierarchyWindowSorting();
         }
 
-        // Os filhos ficam onde estão no mundo
         private static void ZeroKeepingChildren(GameObject group)
         {
             if (group == null) return;

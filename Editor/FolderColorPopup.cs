@@ -6,31 +6,25 @@ using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
 using UnityEngine.UIElements;
-using static IsaDo3D.EnvironmentArt.IsaDo3DStyles;
+using static ArtTools.EnvironmentArt.ArtToolsStyles;
 
-namespace IsaDo3D.EnvironmentArt
+namespace ArtTools.EnvironmentArt
 {
-    // Janela pequena que abre no meio da Unity pelo clique direito na pasta: cores pra clicar, cor livre, selos. O
-    // que se escolhe vale na hora e fica, o Undo é que desfaz. Enquanto está aberta ela acompanha a pasta
-    // selecionada na janela Project. É janela de verdade (ShowUtility) pra quem move e fecha ser o sistema
     internal class FolderColorPopup : EditorWindow
     {
         private const float Width = 340f;
         private const float SwatchSize = 26f;
         private const float BadgeSize = 30f;
 
-        // Altura de antes do conteúdo ser medido, perto da final pra janela não pular ao abrir
         private const float OpenHeight = 438f;
 
         private static readonly string[] ModeNames = { "Same as parent", "No color" };
         private static readonly string[] ModeColors = { FolderColorState.Inherit, FolderColorState.NoColor };
 
-        // Sem isto a Unity guarda o campo na recompilação, e a janela voltaria sem o histórico pra desfazer
         [NonSerialized] private string[] _guids;
         private VisualElement _page;
         private VisualElement _body;
 
-        // Como as pastas estavam antes de cada mudança feita aqui, pro Undo. Pode ter pasta que já não é a da janela
         private readonly List<Dictionary<string, (string Color, string Badge)>> _history =
             new List<Dictionary<string, (string Color, string Badge)>>();
         private Button _undo;
@@ -38,7 +32,6 @@ namespace IsaDo3D.EnvironmentArt
 
         internal static void Open(string[] guids)
         {
-            // Uma por vez
             foreach (var open in Resources.FindObjectsOfTypeAll<FolderColorPopup>()) open.Close();
 
             var popup = CreateInstance<FolderColorPopup>();
@@ -46,7 +39,6 @@ namespace IsaDo3D.EnvironmentArt
             popup.titleContent = new GUIContent("Folder Color");
             popup.ShowUtility();
 
-            // No meio da Unity, toda vez. Sem isto ela reabre onde foi fechada da última vez
             var main = EditorGUIUtility.GetMainWindowPosition();
             popup.position = new Rect(main.center.x - Width * 0.5f, main.center.y - OpenHeight * 0.5f, Width, OpenHeight);
             popup.Focus();
@@ -58,17 +50,13 @@ namespace IsaDo3D.EnvironmentArt
 
         private void OnDestroy() => FolderColorState.Flush();
 
-        // O Ctrl+Z pode ter mudado a pasta que está na janela
         private void AfterUndoRedo()
         {
             if (_guids != null && _body != null) Later();
         }
 
-        // Umas 10 vezes por segundo. Não dá pra esperar o Selection.selectionChanged: clicar numa pasta da árvore
-        // da esquerda (duas colunas) não muda a seleção nem avisa, só faz o Selection.assetGUIDs devolver essa pasta
         private void OnInspectorUpdate() => FollowSelection();
 
-        // Clicar em outra pasta com a janela aberta passa a editar essa. Seleção sem pasta nenhuma não muda nada
         private void FollowSelection()
         {
             if (_guids == null || _body == null) return;
@@ -82,10 +70,8 @@ namespace IsaDo3D.EnvironmentArt
             Later();
         }
 
-        // As peças de visual (cabeçalho, cartão, botão, cores) ficam no IsaDo3DStyles, iguais pra todas as janelas
         private void CreateGUI()
         {
-            // Depois de recompilar a janela volta sem saber de que pastas era
             if (_guids == null || _guids.Length == 0)
             {
                 EditorApplication.delayCall += Close;
@@ -100,7 +86,6 @@ namespace IsaDo3D.EnvironmentArt
                 if (e.keyCode == KeyCode.Escape) Close();
             }, TrickleDown.TrickleDown);
 
-            // Tudo dentro de um elemento só, é a altura dele que a janela copia
             _body = new VisualElement();
             _body.RegisterCallback<GeometryChangedEvent>(_ => FitToContent());
             _page.Add(_body);
@@ -109,8 +94,6 @@ namespace IsaDo3D.EnvironmentArt
             root.Focus();
         }
 
-        // A janela tem o tamanho do conteúdo. Só pelo minSize e maxSize: escrever no position daqui joga a
-        // janela pro canto da tela, igual na janela de Settings
         private void FitToContent()
         {
             float height = Mathf.Ceil(_body.layout.height + _page.resolvedStyle.paddingTop + _page.resolvedStyle.paddingBottom);
@@ -180,9 +163,10 @@ namespace IsaDo3D.EnvironmentArt
                 swatches.Add(Swatch(saved, $"{saved} (right-click to remove)", saved == color, true));
             card.Add(swatches);
 
-            var customTitle = Section("Custom");
-            customTitle.style.marginTop = 10f;
-            card.Add(customTitle);
+            var customTile = Tile(Hex(FolderColors.AccentHex), out var customContent);
+            customTile.style.marginTop = 10f;
+            customTile.style.marginBottom = 0f;
+            customContent.Add(TileTitle("Custom"));
 
             var custom = Row();
             var picker = new ColorField { showAlpha = false, hdr = false, tooltip = "Any color. Shows on the folder while you pick." };
@@ -200,7 +184,8 @@ namespace IsaDo3D.EnvironmentArt
             save.tooltip = "Keeps this color in the grid above.";
             Padding(save, 0f, 10f);
             custom.Add(save);
-            card.Add(custom);
+            customContent.Add(custom);
+            card.Add(customTile);
 
             var modes = new SegmentedBar(ModeNames, index =>
             {
@@ -224,7 +209,6 @@ namespace IsaDo3D.EnvironmentArt
             return card;
         }
 
-        // De onde vem a cor de uma pasta que está em Same as parent
         private static string InheritedFrom(string path)
         {
             int slash = path.LastIndexOf('/');
@@ -237,7 +221,6 @@ namespace IsaDo3D.EnvironmentArt
                 : $"Uses {FolderColors.ColorName(deciding.color)}, from {folder}.";
         }
 
-        // Só aparece quando tem pasta de dentro com cor própria
         private VisualElement BuildResetRow(List<string> inside)
         {
             var row = Row();
@@ -278,7 +261,6 @@ namespace IsaDo3D.EnvironmentArt
 
         private static string ToHex(Color color) => "#" + ColorUtility.ToHtmlStringRGB(color);
 
-        // Sem save é o seletor de cor arrastando, e o arrasto inteiro conta como uma mudança só
         private void SetColor(string color, bool save)
         {
             if (save || !_picking) Remember(_guids);
@@ -326,10 +308,8 @@ namespace IsaDo3D.EnvironmentArt
             });
         }
 
-        // Refazer a janela de dentro do clique apagaria o elemento que ainda está tratando o evento
         private void Later() => rootVisualElement.schedule.Execute(Rebuild);
 
-        // As margens dos itens sobram pra fora, pra primeira e a última coluna encostarem na borda do cartão
         private static VisualElement WrapRow()
         {
             var wrap = new VisualElement();
@@ -363,7 +343,6 @@ namespace IsaDo3D.EnvironmentArt
             return swatch;
         }
 
-        // Selo escolhido fica com a cor de destaque, como a aba ativa das outras janelas
         private VisualElement Badge(string key, string tooltip, bool selected)
         {
             var button = new VisualElement { tooltip = tooltip };
@@ -378,7 +357,7 @@ namespace IsaDo3D.EnvironmentArt
 
             if (key == "")
             {
-                var none = new Label("–");
+                var none = new Label("-");
                 none.pickingMode = PickingMode.Ignore;
                 none.style.color = selected ? Color.white : MutedColor;
                 button.Add(none);

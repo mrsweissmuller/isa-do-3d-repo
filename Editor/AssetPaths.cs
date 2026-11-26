@@ -2,11 +2,10 @@ using System.IO;
 using UnityEditor.PackageManager;
 using UnityEngine;
 
-namespace IsaDo3D.EnvironmentArt
+namespace ArtTools.EnvironmentArt
 {
     internal static class AssetPaths
     {
-        // Path.GetFullPath depende do diretório atual, e Packages/ é virtual pra pacote file: ou git
         public static string Absolute(string assetPath)
         {
             var package = assetPath.StartsWith("Packages/") ? PackageInfo.FindForAssetPath(assetPath) : null;

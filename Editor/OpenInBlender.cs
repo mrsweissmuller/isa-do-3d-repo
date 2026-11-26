@@ -9,12 +9,12 @@ using UnityEditor;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
 
-namespace IsaDo3D.EnvironmentArt
+namespace ArtTools.EnvironmentArt
 {
     public static class OpenInBlender
     {
-        private const string BlenderPathPrefKey = "Isa3D.OpenInBlender.BlenderPath";
-        private const string BatexExportFolderPrefKey = "Isa3D.OpenInBlender.BatexExportFolder";
+        internal const string BlenderPathPrefKey = "ArtTools.OpenInBlender.BlenderPath";
+        internal const string BatexExportFolderPrefKey = "ArtTools.OpenInBlender.BatexExportFolder";
         private const string BlenderRoot = "C:/Program Files/Blender Foundation";
 
         private static readonly DccDescriptor Blender = new DccDescriptor
@@ -23,14 +23,12 @@ namespace IsaDo3D.EnvironmentArt
             ExeFileName = "blender.exe",
             DefaultRoot = BlenderRoot,
             PathPrefKey = BlenderPathPrefKey,
-            // Sem .dae: o Blender 5.0 tirou o suporte a Collada
             ModelExtensions = new[] { ".fbx", ".obj", ".blend" },
             AutoDetect = () => ExternalToolLocator.FindNewestVersionedInstall(BlenderRoot, null, "blender.exe"),
             WriteOpenScript = WriteImportScript,
             ScriptPathArgumentFormat = "--python \"{0}\"",
         };
 
-        // Pra janela de Settings mostrar o que está salvo
         internal static string SavedPath => EditorPrefs.GetString(BlenderPathPrefKey, "");
         internal static string BatexExportFolder => EditorPrefs.GetString(BatexExportFolderPrefKey, "");
 
@@ -66,9 +64,9 @@ namespace IsaDo3D.EnvironmentArt
                 "if hasattr(bpy.context.scene, 'export_folder'):\n" +
                 "    bpy.context.scene.export_folder = target_path\n" +
                 "    bpy.ops.wm.save_homefile()\n" +
-                "    print('[IsaDo3D] OK: export_folder set to ' + target_path + ' and saved as the default startup.')\n" +
+                "    print('[ArtTools] OK: export_folder set to ' + target_path + ' and saved as the default startup.')\n" +
                 "else:\n" +
-                "    print('[IsaDo3D] ERROR: the export_folder property does not exist in this session. ' +\n" +
+                "    print('[ArtTools] ERROR: the export_folder property does not exist in this session. ' +\n" +
                 "          'Enable the Batex add-on in Edit > Preferences > Add-ons and run this setup again.')\n";
 
             var scriptPath = TempScriptFile.Write("configure_batex", ".py", script);
@@ -78,7 +76,7 @@ namespace IsaDo3D.EnvironmentArt
                 if (!string.IsNullOrEmpty(output)) Debug.Log($"[Blender] Blender output:\n{output}");
                 if (!string.IsNullOrEmpty(errorOutput)) Debug.LogWarning($"[Blender] Blender stderr:\n{errorOutput}");
 
-                if (output.Contains("[IsaDo3D] OK"))
+                if (output.Contains("[ArtTools] OK"))
                     Debug.Log("[Blender] Batex export folder set.");
                 else
                     Debug.LogWarning("[Blender] Could not confirm success from the output, check the log above.");
@@ -87,7 +85,6 @@ namespace IsaDo3D.EnvironmentArt
 
         public static void InstallKritaBridgeAddon()
         {
-            // Em pacote do git ou file: o Packages/ não existe no disco
             var package = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(OpenInBlender).Assembly);
             var addonAbsolutePath = package == null
                 ? ""
@@ -116,9 +113,9 @@ namespace IsaDo3D.EnvironmentArt
                 "    bpy.ops.preferences.addon_install(filepath=addon_path, overwrite=True)\n" +
                 "    bpy.ops.preferences.addon_enable(module='isado3d_krita_bridge')\n" +
                 "    bpy.ops.wm.save_userpref()\n" +
-                "    print('[IsaDo3D] OK: Krita Bridge add-on installed and enabled.')\n" +
+                "    print('[ArtTools] OK: Krita Bridge add-on installed and enabled.')\n" +
                 "except Exception as e:\n" +
-                "    print('[IsaDo3D] ERROR: ' + str(e))\n";
+                "    print('[ArtTools] ERROR: ' + str(e))\n";
 
             var scriptPath = TempScriptFile.Write("install_krita_bridge", ".py", script);
 
@@ -127,14 +124,14 @@ namespace IsaDo3D.EnvironmentArt
                 if (!string.IsNullOrEmpty(output)) Debug.Log($"[Blender] Blender output:\n{output}");
                 if (!string.IsNullOrEmpty(errorOutput)) Debug.LogWarning($"[Blender] Blender stderr:\n{errorOutput}");
 
-                if (output.Contains("[IsaDo3D] OK"))
+                if (output.Contains("[ArtTools] OK"))
                     Debug.Log("[Blender] Krita Bridge add-on installed. Set the Krita path in Edit > Preferences > Add-ons > Isa do 3D - Krita Bridge if it is not detected automatically.");
                 else
                     Debug.LogWarning("[Blender] Could not confirm success from the output, check the log above.");
             });
         }
 
-        private static bool IsOn() => IsaDo3DToolState.IsOn(ToolIds.Blender);
+        private static bool IsOn() => ArtToolsState.IsOn(ToolIds.Blender);
 
         [MenuItem("Assets/Open in Blender", true)]
         [MenuItem("GameObject/Open in Blender", true)]
@@ -150,7 +147,6 @@ namespace IsaDo3D.EnvironmentArt
             DccLauncher.OpenSelectedMesh(Blender);
         }
 
-        // Polling pra não travar a Unity, ler o stdout síncrono antes do stderr dava deadlock
         private static void RunBackgroundScript(string blenderPath, string scriptPath, string progressTitle, Action<string, string> onComplete)
         {
             var psi = new ProcessStartInfo
@@ -199,7 +195,6 @@ namespace IsaDo3D.EnvironmentArt
 
                 if (!exited)
                 {
-                    // Pode ter saído entre o HasExited e o Kill
                     try { process.Kill(); }
                     catch (InvalidOperationException) { }
                     catch (Win32Exception e)
@@ -245,19 +240,15 @@ namespace IsaDo3D.EnvironmentArt
             return TempScriptFile.Write("open_in_blender", ".py", script);
         }
 
-        // O addon Isa do 3D exporta como <pasta>/<nome do objeto>.fbx: com a pasta do próprio FBX, exportar de volta
-        // sobrescreve o arquivo do projeto. Sem o addon habilitado a propriedade não existe e nada acontece.
         private static string ExportFolderScript(string absoluteMeshPath)
         {
             var folder = Path.GetDirectoryName(absoluteMeshPath).Replace('\\', '/');
             return "scene = bpy.context.scene\n" +
                    "if hasattr(scene, 'isado3d_unity_export'):\n" +
                    $"    scene.isado3d_unity_export.folder = {PythonString(folder)}\n" +
-                   $"    print('[IsaDo3D] Export folder: ' + {PythonString(folder)})\n";
+                   $"    print('[ArtTools] Export folder: ' + {PythonString(folder)})\n";
         }
 
-        // Quem sabe qual textura o modelo usa é a Unity: o importer guarda o material de cada slot do FBX,
-        // e o material aponta pra textura. O Blender só recebe nome do material -> arquivo da textura.
         private const string TextureScriptTemplate = @"
 import os
 import re
@@ -282,14 +273,13 @@ def _apply_textures():
         if bsdf is None:
             continue
         base_color = bsdf.inputs['Base Color']
-        # O FBX costuma trazer o caminho da textura na maquina de quem exportou: o no existe, a imagem nao
         existing = base_color.links[0].from_node if base_color.is_linked else None
         if existing is not None and existing.type != 'TEX_IMAGE':
             continue
         try:
             image = bpy.data.images.load(path, check_existing=True)
         except RuntimeError as e:
-            print('[IsaDo3D] Could not load the texture ' + path + ': ' + str(e))
+            print('[ArtTools] Could not load the texture ' + path + ': ' + str(e))
             continue
         if existing is not None:
             existing.image = image
@@ -299,7 +289,7 @@ def _apply_textures():
             node.location = (bsdf.location.x - 400, bsdf.location.y)
             tree.links.new(node.outputs['Color'], base_color)
         applied += 1
-        print('[IsaDo3D] Texture applied to ' + mat.name + ': ' + path)
+        print('[ArtTools] Texture applied to ' + mat.name + ': ' + path)
     return applied
 
 def _view3d_spaces():
@@ -312,7 +302,6 @@ def _view3d_spaces():
                     if space.type == 'VIEW_3D':
                         yield space
 
-# Padrao do viewport: Solid, luz Flat, cor por Texture, contorno ligado e o resto desligado
 def _apply_viewport_shading():
     for space in _view3d_spaces():
         shading = space.shading
@@ -329,7 +318,6 @@ def _apply_viewport_shading():
         shading.show_cavity = False
         shading.show_backface_culling = False
 
-# Solid com cor Texture mostra o no de imagem ativo do material
 def _activate_base_color_images():
     for mat in bpy.data.materials:
         if not mat.use_nodes:
@@ -352,7 +340,6 @@ def _texture_index():
                     _index.setdefault(stem.lower(), []).append(os.path.join(folder, f))
     return _index
 
-# Textura que o FBX aponta mas nao existe aqui (caminho da maquina de quem exportou): procura pelo nome em Assets
 def _relink_missing_images():
     fixed = 0
     for image in bpy.data.images:
@@ -368,7 +355,7 @@ def _relink_missing_images():
         image.filepath = found[0].replace('\\', '/')
         image.reload()
         fixed += 1
-        print('[IsaDo3D] Texture found again by name: ' + found[0])
+        print('[ArtTools] Texture found again by name: ' + found[0])
     return fixed
 
 _apply_textures()
@@ -377,7 +364,7 @@ _activate_base_color_images()
 try:
     _apply_viewport_shading()
 except Exception as e:
-    print('[IsaDo3D] Could not set up the viewport: ' + str(e))
+    print('[ArtTools] Could not set up the viewport: ' + str(e))
 ";
 
         private static string TextureScript(string absoluteMeshPath)
@@ -393,7 +380,6 @@ except Exception as e:
         private static readonly string[] BlenderImageExtensions =
             { ".png", ".jpg", ".jpeg", ".tga", ".bmp", ".tif", ".tiff", ".exr", ".hdr" };
 
-        // Nome do material no FBX -> caminho absoluto da textura, só dos que têm uma imagem que o Blender lê
         private static Dictionary<string, string> ResolveMaterialTextures(string absoluteMeshPath)
         {
             var result = new Dictionary<string, string>();
@@ -410,7 +396,6 @@ except Exception as e:
                         materials[entry.Key.name] = remapped;
             }
 
-            // Material embutido no FBX, sem remap pro projeto
             foreach (var embedded in AssetDatabase.LoadAllAssetsAtPath(assetPath).OfType<Material>())
                 if (!materials.ContainsKey(embedded.name)) materials[embedded.name] = embedded;
 
@@ -443,7 +428,6 @@ except Exception as e:
                 if (!string.IsNullOrEmpty(path)) return path;
             }
 
-            // Shader customizado com outro nome de propriedade: a primeira textura que o material tiver
             foreach (var property in material.GetTexturePropertyNames())
             {
                 var path = AssetDatabase.GetAssetPath(material.GetTexture(property));

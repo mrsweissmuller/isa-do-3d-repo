@@ -10,21 +10,17 @@ using UnityEngine;
 using Debug = UnityEngine.Debug;
 using Object = UnityEngine.Object;
 
-namespace IsaDo3D.EnvironmentArt
+namespace ArtTools.EnvironmentArt
 {
     public static class OpenInImageEditor
     {
-        // O mesmo que a Unity usa em Preferences > External Tools > Image application
         private const string UnityImageAppPrefKey = "kImagesDefaultApp";
 
-        // De quando a ferramenta só abria o Krita e guardava o caminho dele
-        private const string LegacyKritaPathPrefKey = "Isa3D.OpenInKrita.KritaPath";
         private const string KritaSourceExtension = ".kra";
 
         private static readonly string[] OpenableExtensions =
             { ".png", ".jpg", ".jpeg", ".tga", ".tif", ".tiff", ".psd", ".exr", ".bmp", ".gif", KritaSourceExtension };
 
-        // Vazio é sem programa escolhido, aí abre com o que o Windows associa ao arquivo
         internal static string EditorPath
         {
             get
@@ -32,12 +28,11 @@ namespace IsaDo3D.EnvironmentArt
                 var chosen = EditorPrefs.GetString(UnityImageAppPrefKey, "");
                 if (!string.IsNullOrEmpty(chosen)) return chosen;
 
-                var legacy = EditorPrefs.GetString(LegacyKritaPathPrefKey, "");
+                var legacy = EditorPrefs.GetString(LegacyNames.KritaPathPref, "");
                 return File.Exists(legacy) ? legacy : "";
             }
         }
 
-        // Grava na preferência da Unity, então o duplo clique numa textura passa a abrir no mesmo programa
         public static void ConfigureEditorPath()
         {
             var current = EditorPath;
@@ -51,7 +46,7 @@ namespace IsaDo3D.EnvironmentArt
             Debug.Log($"[Image Editor] Image application set to: {path}");
         }
 
-        private static bool IsOn() => IsaDo3DToolState.IsOn(ToolIds.ImageEditor);
+        private static bool IsOn() => ArtToolsState.IsOn(ToolIds.ImageEditor);
 
         [MenuItem("Assets/Open in Image Editor", true)]
         [MenuItem("GameObject/Open in Image Editor", true)]
@@ -88,8 +83,6 @@ namespace IsaDo3D.EnvironmentArt
                 return;
             }
 
-            // O fonte .kra só o Krita abre. Sem programa escolhido o Windows manda ele pra quem estiver associado.
-            // Com fonte, a textura continua vigiada pra recarregar quando for exportada
             var kritaSourcePath = !hasEditor || IsKrita(editorPath) ? FindKritaSource(absoluteTexturePath) : null;
             var fileToOpen = kritaSourcePath ?? absoluteTexturePath;
 
@@ -134,7 +127,6 @@ namespace IsaDo3D.EnvironmentArt
             }
         }
 
-        // Escrito pelo plugin "Exportar para Unity" do Krita: { "map": { "<fonte .kra>": "<textura exportada>" } }
         private const string KritaExportMapPath = "krita/pykrita/unity_export/unity_export.json";
 
         private static readonly Regex JsonStringPair =
@@ -159,7 +151,6 @@ namespace IsaDo3D.EnvironmentArt
                     if (ComparablePath(Regex.Unescape(pair.Groups[2].Value)) != wanted) continue;
                     if (!File.Exists(source)) continue;
 
-                    // O plugin guarda o caminho do fonte em minúsculas
                     var onDisk = Directory.GetFiles(Path.GetDirectoryName(source), Path.GetFileName(source));
                     return onDisk.Length > 0 ? onDisk[0] : source;
                 }
@@ -257,7 +248,6 @@ namespace IsaDo3D.EnvironmentArt
                 found.Add(new MaterialTexture { Property = property, Path = path });
             }
 
-            // mainTexture cobre o _MainTex e o _BaseMap
             TryAdd("main texture", material.mainTexture);
 
             foreach (var property in material.GetTexturePropertyNames())
@@ -284,13 +274,11 @@ namespace IsaDo3D.EnvironmentArt
 
         private const double PollIntervalSeconds = 1.0;
 
-        // SessionState sobrevive à recompilação
-        private const string WatchListSessionKey = "Isa3D.OpenInKrita.Watching";
+        private const string WatchListSessionKey = "ArtTools.OpenInImageEditor.Watching";
 
         private static readonly Dictionary<string, WatchedTexture> Watched = new Dictionary<string, WatchedTexture>();
         private static double _nextPoll;
 
-        // Pra janela de Settings mostrar quantas estão vigiadas e oferecer o Stop
         internal static int WatchedCount => Watched.Count;
         internal static event Action WatchListChanged;
 
@@ -357,7 +345,6 @@ namespace IsaDo3D.EnvironmentArt
                     continue;
                 }
 
-                // O Krita muda a data quando começa a salvar, só reimporta quando ela parar de mudar
                 if (write != watched.PendingWrite)
                 {
                     watched.PendingWrite = write;
@@ -376,7 +363,6 @@ namespace IsaDo3D.EnvironmentArt
 
         private static void SaveWatchList()
         {
-            // '|' não pode em caminho no Windows
             SessionState.SetString(WatchListSessionKey, string.Join("|", Watched.Keys));
             WatchListChanged?.Invoke();
         }
@@ -399,7 +385,6 @@ namespace IsaDo3D.EnvironmentArt
                     AssetPath = assetPath,
                     AbsolutePath = absolutePath,
 
-                    // O que foi salvo durante a recompilação a Unity já importou
                     ImportedWrite = File.GetLastWriteTimeUtc(absolutePath),
                 };
             }
