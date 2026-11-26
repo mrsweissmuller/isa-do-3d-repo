@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Rendering;
 using Debug = UnityEngine.Debug;
 
 namespace ArtTools.EnvironmentArt
@@ -318,6 +319,14 @@ def _apply_viewport_shading():
         shading.show_cavity = False
         shading.show_backface_culling = False
 
+def _show_uv_editor():
+    wm = bpy.context.window_manager
+    screens = [w.screen for w in wm.windows] if wm else []
+    for screen in screens:
+        for area in screen.areas:
+            if area.ui_type == 'IMAGE_EDITOR' and area.spaces.active.ui_mode == 'VIEW':
+                area.ui_type = 'UV'
+
 def _activate_base_color_images():
     for mat in bpy.data.materials:
         if not mat.use_nodes:
@@ -365,6 +374,10 @@ try:
     _apply_viewport_shading()
 except Exception as e:
     print('[ArtTools] Could not set up the viewport: ' + str(e))
+try:
+    _show_uv_editor()
+except Exception as e:
+    print('[ArtTools] Could not switch to the UV Editor: ' + str(e))
 ";
 
         private static string TextureScript(string absoluteMeshPath)
@@ -428,9 +441,13 @@ except Exception as e:
                 if (!string.IsNullOrEmpty(path)) return path;
             }
 
-            foreach (var property in material.GetTexturePropertyNames())
+            var shader = material.shader;
+            for (int i = 0; i < shader.GetPropertyCount(); ++i)
             {
-                var path = AssetDatabase.GetAssetPath(material.GetTexture(property));
+                if (shader.GetPropertyType(i) != ShaderPropertyType.Texture) continue;
+                if ((shader.GetPropertyFlags(i) & ShaderPropertyFlags.MainTexture) == 0) continue;
+
+                var path = AssetDatabase.GetAssetPath(material.GetTexture(shader.GetPropertyName(i)));
                 if (!string.IsNullOrEmpty(path)) return path;
             }
             return null;

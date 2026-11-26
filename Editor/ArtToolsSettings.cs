@@ -477,7 +477,6 @@ namespace ArtTools.EnvironmentArt
             if (setup.GetPath == null)
             {
                 status.text = setup.GetText != null ? setup.GetText() : setup.Hint;
-                status.tooltip = "";
                 return;
             }
 
@@ -485,13 +484,11 @@ namespace ArtTools.EnvironmentArt
             if (string.IsNullOrEmpty(path))
             {
                 status.text = "Not set";
-                status.tooltip = setup.Hint ?? "";
                 return;
             }
 
             bool exists = setup.IsFolder ? Directory.Exists(path) : File.Exists(path);
             status.text = exists ? Shorten(path) : "Not found";
-            status.tooltip = path;
             if (!exists) status.style.color = Danger;
         }
 

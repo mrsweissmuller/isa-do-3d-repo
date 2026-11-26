@@ -105,12 +105,14 @@ namespace ArtTools.EnvironmentArt
             int undoGroup = Undo.GetCurrentGroup();
 
             int changed = 0, skippedNoSlot = 0;
+            var alreadyChanged = new HashSet<Renderer>();
 
             foreach (var go in selected)
             {
                 foreach (var renderer in go.GetComponentsInChildren<Renderer>(true))
                 {
                     if (!(renderer is MeshRenderer || renderer is SkinnedMeshRenderer)) continue;
+                    if (!alreadyChanged.Add(renderer)) continue;
 
                     ApplyToRenderer(renderer, ref changed, ref skippedNoSlot);
                 }

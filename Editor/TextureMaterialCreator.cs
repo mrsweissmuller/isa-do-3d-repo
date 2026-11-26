@@ -226,7 +226,7 @@ namespace ArtTools.EnvironmentArt
         {
             var dir = Path.GetDirectoryName(materialPath).Replace('\\', '/');
             if (!AssetDatabase.IsValidFolder(dir)) return null;
-            var parts = Path.GetFileNameWithoutExtension(materialPath).Split('_');
+            var parts = AssetNaming.StripTypePrefix(Path.GetFileNameWithoutExtension(materialPath)).Split('_');
             if (parts.Length < 2) return null;
 
             string best = null; int bestScore = 1;
@@ -234,7 +234,7 @@ namespace ArtTools.EnvironmentArt
             {
                 var path = AssetDatabase.GUIDToAssetPath(guid);
                 if (Path.GetDirectoryName(path).Replace('\\', '/') != dir) continue;
-                var other = Path.GetFileNameWithoutExtension(path).Split('_');
+                var other = AssetNaming.StripTypePrefix(Path.GetFileNameWithoutExtension(path)).Split('_');
                 int score = 0;
                 while (score < parts.Length && score < other.Length && parts[score] == other[score]) ++score;
                 if (score > bestScore || (score == bestScore && best != null && string.CompareOrdinal(path, best) < 0))

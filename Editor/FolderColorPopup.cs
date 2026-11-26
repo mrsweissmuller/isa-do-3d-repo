@@ -133,7 +133,6 @@ namespace ArtTools.EnvironmentArt
 
             var paths = _guids.Select(AssetDatabase.GUIDToAssetPath).ToArray();
             var target = Note(paths.Length == 1 ? Path.GetFileName(paths[0]) : $"{paths.Length} folders");
-            target.tooltip = string.Join("\n", paths);
             target.style.fontSize = 12f;
             target.style.color = TextColor;
             target.style.unityFontStyleAndWeight = FontStyle.Bold;
@@ -144,7 +143,6 @@ namespace ArtTools.EnvironmentArt
             row.Add(target);
 
             _undo = LinkButton("Undo", UndoLast);
-            _undo.tooltip = "Takes back the last change made in this window, even on a folder edited before this one. Ctrl+Z works too.";
             _undo.SetEnabled(_history.Count > 0);
             row.Add(_undo);
             return row;
@@ -158,9 +156,9 @@ namespace ArtTools.EnvironmentArt
 
             var swatches = WrapRow();
             foreach (var option in FolderColors.Presets)
-                swatches.Add(Swatch(option.Hex, option.Name, option.Hex == color, false));
+                swatches.Add(Swatch(option.Hex, option.Hex == color, false));
             foreach (var saved in FolderColorState.Palette)
-                swatches.Add(Swatch(saved, $"{saved} (right-click to remove)", saved == color, true));
+                swatches.Add(Swatch(saved, saved == color, true));
             card.Add(swatches);
 
             var customTile = Tile(Hex(FolderColors.AccentHex), out var customContent);
@@ -169,7 +167,7 @@ namespace ArtTools.EnvironmentArt
             customContent.Add(TileTitle("Custom"));
 
             var custom = Row();
-            var picker = new ColorField { showAlpha = false, hdr = false, tooltip = "Any color. Shows on the folder while you pick." };
+            var picker = new ColorField { showAlpha = false, hdr = false };
             picker.style.flexGrow = 1f;
             picker.style.marginLeft = 0f;
             picker.style.marginRight = 8f;
@@ -181,7 +179,6 @@ namespace ArtTools.EnvironmentArt
                 FolderColorState.AddToPalette(ToHex(picker.value));
                 Later();
             });
-            save.tooltip = "Keeps this color in the grid above.";
             Padding(save, 0f, 10f);
             custom.Add(save);
             customContent.Add(custom);
@@ -192,7 +189,6 @@ namespace ArtTools.EnvironmentArt
                 SetColor(ModeColors[index], true);
                 Later();
             });
-            modes.tooltip = "Same as parent follows the folder above, and is the default. No color stays plain even when the folder above has a color.";
             modes.style.marginTop = 10f;
             modes.Select(mode);
             card.Add(modes);
@@ -227,7 +223,6 @@ namespace ArtTools.EnvironmentArt
             row.style.marginTop = 10f;
 
             var count = Note(inside.Count == 1 ? "1 folder inside has its own color." : $"{inside.Count} folders inside have their own color.");
-            count.tooltip = string.Join("\n", inside.Select(AssetDatabase.GUIDToAssetPath));
             count.style.flexGrow = 1f;
             count.style.flexShrink = 1f;
             count.style.marginRight = 8f;
@@ -240,7 +235,6 @@ namespace ArtTools.EnvironmentArt
                 FolderColorState.Edit(inside, entry => entry.color = FolderColorState.Inherit);
                 Later();
             });
-            reset.tooltip = "Sets every folder inside back to Same as parent. Badges stay.";
             Padding(reset, 0f, 10f);
             row.Add(reset);
             return row;
@@ -252,9 +246,9 @@ namespace ArtTools.EnvironmentArt
             var card = Card("Badge", name ?? "None", out _);
 
             var badges = WrapRow();
-            badges.Add(Badge("", "No badge", badge == ""));
+            badges.Add(Badge("", badge == ""));
             foreach (var option in FolderColors.Badges)
-                badges.Add(Badge(option.Key, option.Name, badge == option.Key));
+                badges.Add(Badge(option.Key, badge == option.Key));
             card.Add(badges);
             return card;
         }
@@ -320,11 +314,11 @@ namespace ArtTools.EnvironmentArt
             return wrap;
         }
 
-        private VisualElement Swatch(string hex, string tooltip, bool selected, bool removable)
+        private VisualElement Swatch(string hex, bool selected, bool removable)
         {
             ColorUtility.TryParseHtmlString(hex, out var color);
 
-            var swatch = new VisualElement { tooltip = tooltip };
+            var swatch = new VisualElement();
             swatch.style.width = SwatchSize;
             swatch.style.height = SwatchSize;
             swatch.style.backgroundColor = color;
@@ -343,9 +337,9 @@ namespace ArtTools.EnvironmentArt
             return swatch;
         }
 
-        private VisualElement Badge(string key, string tooltip, bool selected)
+        private VisualElement Badge(string key, bool selected)
         {
-            var button = new VisualElement { tooltip = tooltip };
+            var button = new VisualElement();
             button.style.width = BadgeSize;
             button.style.height = BadgeSize;
             button.style.alignItems = Align.Center;

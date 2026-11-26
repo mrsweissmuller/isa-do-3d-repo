@@ -39,6 +39,16 @@ namespace ArtTools.EnvironmentArt
             }
         }
 
+        private static readonly ColorPreset DefaultPreset = new ColorPreset
+        {
+            Name = "Synthwave",
+            Colors = new[]
+            {
+                Hex(0xB0894A), Hex(0xC4704A), Hex(0xD0558C), Hex(0xA84585),
+                Hex(0x7446A8), Hex(0x3F2E6B), Hex(0x4C66BF), Hex(0x4298A6),
+            },
+        };
+
         private static readonly ColorPreset[] ColorPresets =
         {
             new ColorPreset
@@ -95,15 +105,7 @@ namespace ArtTools.EnvironmentArt
                     Hex(0x6E5FD1), Hex(0x9F8374), Hex(0x30662E), Hex(0xAD5186),
                 },
             },
-            new ColorPreset
-            {
-                Name = "Synthwave",
-                Colors = new[]
-                {
-                    Hex(0xB0894A), Hex(0xC4704A), Hex(0xD0558C), Hex(0xA84585),
-                    Hex(0x7446A8), Hex(0x3F2E6B), Hex(0x4C66BF), Hex(0x4298A6),
-                },
-            },
+            DefaultPreset,
             new ColorPreset
             {
                 Name = "Rainbow",
@@ -150,24 +152,49 @@ namespace ArtTools.EnvironmentArt
 
         private Label _selectedCount;
         private VisualElement _groupButtons;
-        private class AutoRow
+        private class AutoRow : MarkableRow
         {
-            public GameObject Object;
-            public VisualElement Row;
-            public Toggle Check;
+            public DropdownPill Destination;
+
+            public bool HasDestination => Destination != null && Destination.value.Length > 0;
+        }
+
+        private class NameRow : MarkableRow
+        {
+            public string NewName;
+        }
+
+        private class FamilyRow : MarkableRow
+        {
+            public FamilySuggestion Suggestion;
+            public TextField ParentName;
             public DropdownPill Destination;
         }
 
-        private readonly List<AutoRow> _autoRows = new List<AutoRow>();
+        private readonly MarkableRows<AutoRow> _autoRows = new MarkableRows<AutoRow>();
+        [System.NonSerialized] private bool _autoPreviewOpen;
         private VisualElement _autoBatch;
-
-        private int _autoCheckAnchor = -1;
-        private int _autoNameAnchor = -1;
         private Label _autoNote;
         private VisualElement _autoPreview;
         private VisualElement _autoList;
         private Button _autoApply;
-        private Button _normalizeButton;
+        private readonly List<string> _organizeScopes = new List<string> { "" };
+        private DropdownPill _familiesScope;
+        private DropdownPill _namesScope;
+        private readonly MarkableRows<FamilyRow> _familyRows = new MarkableRows<FamilyRow>();
+        private Label _familiesNote;
+        private VisualElement _familiesPreview;
+        private VisualElement _familiesBatch;
+        private VisualElement _familiesList;
+        private Button _familiesApply;
+        [System.NonSerialized] private bool _familiesPreviewOpen;
+        private readonly MarkableRows<NameRow> _nameRows = new MarkableRows<NameRow>();
+        private Label _namesNote;
+        private VisualElement _namesPreview;
+        private VisualElement _namesBatch;
+        private VisualElement _namesList;
+        private Button _namesApply;
+        [System.NonSerialized] private bool _namesPreviewOpen;
         private TextField _separatorName;
         private TextField _groupName;
 
@@ -194,6 +221,8 @@ namespace ArtTools.EnvironmentArt
         private Slider _saturationSlider;
         private Slider _lightnessSlider;
         private Button _resetAdjustButton;
+        private readonly List<(ColorPreset Preset, VisualElement Tile, Label Badge)> _presetTiles =
+            new List<(ColorPreset, VisualElement, Label)>();
         private Toggle _linesToggle;
 
         private Label _lintScene;
@@ -203,22 +232,33 @@ namespace ArtTools.EnvironmentArt
         {
             HierarchyGroupColors.Changed += Refresh;
             HierarchyViewPrefs.Changed += Refresh;
+            _autoRows.Changed += UpdateAutoCount;
+            _nameRows.Changed += UpdateNamesCount;
+            _familyRows.Changed += UpdateFamiliesCount;
         }
 
         private void OnDisable()
         {
             HierarchyGroupColors.Changed -= Refresh;
             HierarchyViewPrefs.Changed -= Refresh;
+            _autoRows.Changed -= UpdateAutoCount;
+            _nameRows.Changed -= UpdateNamesCount;
+            _familyRows.Changed -= UpdateFamiliesCount;
         }
 
         private void OnSelectionChange()
         {
             Refresh();
-            RefreshAutoSelection();
+            _autoRows.RefreshSelection();
+            _nameRows.RefreshSelection();
+            _familyRows.RefreshSelection();
         }
 
         private void OnHierarchyChange()
         {
+            if (_autoPreviewOpen) BuildAutoPreview();
+            if (_familiesPreviewOpen) BuildFamiliesPreview();
+            if (_namesPreviewOpen) BuildNamesPreview();
             Refresh();
         }
 
@@ -353,18 +393,16 @@ namespace ArtTools.EnvironmentArt
 
             var defaults = Card("Groups", "", out _);
             var create = FlatButton("Create default groups", true, CreateDefaultGroups);
-            create.tooltip = "Adds the missing default groups to the scene root and puts them in order.";
             defaults.Add(create);
 
             var groupRow = Row();
             groupRow.style.marginTop = 6f;
-            _groupName = new TextField { value = "NEW GROUP", tooltip = "Name of the new group." };
+            _groupName = new TextField { value = "NEW GROUP" };
             _groupName.style.flexGrow = 1f;
             _groupName.style.marginLeft = 0f;
             groupRow.Add(_groupName);
 
             var addGroup = FlatButton("New group", false, AddGroup);
-            addGroup.tooltip = "Adds a group above the selected root object, or at the end of the scene.";
             addGroup.style.width = 100f;
             addGroup.style.marginLeft = 4f;
             groupRow.Add(addGroup);
@@ -393,13 +431,12 @@ namespace ArtTools.EnvironmentArt
 
             var separators = Card("Separators", "", out _);
             var separatorRow = Row();
-            _separatorName = new TextField { value = "SECTION", tooltip = "Name shown between the lines." };
+            _separatorName = new TextField { value = "SECTION" };
             _separatorName.style.flexGrow = 1f;
             _separatorName.style.marginLeft = 0f;
             separatorRow.Add(_separatorName);
 
             var addSeparator = FlatButton("Add separator", true, AddSeparator);
-            addSeparator.tooltip = "Adds a separator above the selected root object, or at the end of the scene.";
             addSeparator.style.height = 22f;
             addSeparator.style.marginLeft = 4f;
             separatorRow.Add(addSeparator);
@@ -407,62 +444,317 @@ namespace ArtTools.EnvironmentArt
             page.Add(separators);
 
             var auto = Card("Auto organize", "", out _autoNote);
-            var preview = FlatButton("Preview loose root objects", false, BuildAutoPreview);
-            preview.tooltip = "Suggests a group for each loose root object. Nothing moves until you confirm.";
-            auto.Add(preview);
-
-            _autoPreview = new VisualElement();
-            _autoPreview.style.marginTop = 8f;
-
-            _autoBatch = new VisualElement();
-            _autoBatch.style.marginBottom = 6f;
-            _autoPreview.Add(_autoBatch);
-
-            var list = new ScrollView(ScrollViewMode.Vertical);
-            list.style.maxHeight = 260f;
-            list.style.backgroundColor = InsetColor;
-            Radius(list, 5f);
-            _autoList = list.contentContainer;
-            Padding(_autoList, 4f, 6f);
-            _autoPreview.Add(list);
-
-            var autoActions = Row();
-            autoActions.style.marginTop = 8f;
-
-            _autoApply = FlatButton("Move", true, ApplyAutoPreview);
-            _autoApply.style.height = 22f;
-            _autoApply.style.flexGrow = 1f;
-            _autoApply.style.flexBasis = 0f;
-            _autoApply.style.marginRight = 4f;
-            autoActions.Add(_autoApply);
-
-            var cancel = FlatButton("Cancel", false, ClearAutoPreview);
-            cancel.style.width = 70f;
-            autoActions.Add(cancel);
-            _autoPreview.Add(autoActions);
-
+            auto.Add(FlatButton("Preview loose root objects", false, BuildAutoPreview));
+            _autoPreview = PreviewShell(ApplyAutoPreview, ClearAutoPreview, out _autoBatch, out _autoList, out _autoApply);
             auto.Add(_autoPreview);
-            Show(_autoPreview, false);
             page.Add(auto);
 
-            var names = Card("Names", "", out _);
-            _normalizeButton = FlatButton("Normalize selected names", false, NormalizeSelectedNames);
-            _normalizeButton.tooltip = "Removes Unity's duplicate suffixes, like (1), and renumbers the selected objects.";
-            names.Add(_normalizeButton);
+            var families = Card("Group similar objects", "", out _familiesNote);
+            families.Add(FindRow("Find objects to group", BuildFamiliesPreview, out _familiesScope));
+            _familiesPreview = PreviewShell(ApplyFamiliesPreview, ClearFamiliesPreview, out _familiesBatch, out _familiesList, out _familiesApply);
+            families.Add(_familiesPreview);
+            page.Add(families);
+
+            var names = Card("Clean up duplicate names", "", out _namesNote);
+            names.Add(FindRow("Find names to clean up", BuildNamesPreview, out _namesScope));
+            _namesPreview = PreviewShell(ApplyNamesPreview, ClearNamesPreview, out _namesBatch, out _namesList, out _namesApply);
+            names.Add(_namesPreview);
             page.Add(names);
 
             return page;
         }
 
+        private VisualElement FindRow(string label, System.Action find, out DropdownPill scope)
+        {
+            var row = Row();
+
+            var button = FlatButton(label, false, find);
+            button.style.flexGrow = 1f;
+            button.style.flexBasis = 0f;
+            button.style.marginRight = 4f;
+            row.Add(button);
+
+            scope = new DropdownPill(_organizeScopes, 0)
+            {
+                MenuLabel = chosen => chosen.Length == 0 ? "Whole scene" : chosen,
+                FieldLabel = chosen => chosen.Length == 0 ? "In the whole scene" : $"In {chosen}",
+            };
+            scope.style.width = 170f;
+            scope.style.height = 22f;
+            scope.style.flexShrink = 0f;
+            scope.Changed += chosen =>
+            {
+                HierarchyViewPrefs.OrganizeInside = chosen;
+                if (_familiesPreviewOpen) BuildFamiliesPreview();
+                if (_namesPreviewOpen) BuildNamesPreview();
+            };
+            row.Add(scope);
+
+            return row;
+        }
+
+        private static VisualElement PreviewShell(
+            System.Action apply, System.Action cancel,
+            out VisualElement batch, out VisualElement list, out Button applyButton)
+        {
+            var preview = new VisualElement();
+            preview.style.marginTop = 8f;
+
+            batch = new VisualElement();
+            batch.style.marginBottom = 6f;
+            preview.Add(batch);
+
+            var scroll = new ScrollView(ScrollViewMode.Vertical);
+            scroll.style.maxHeight = 260f;
+            scroll.style.backgroundColor = InsetColor;
+            Radius(scroll, 5f);
+            list = scroll.contentContainer;
+            Padding(list, 4f, 6f);
+            preview.Add(scroll);
+
+            var actions = Row();
+            actions.style.marginTop = 8f;
+
+            applyButton = FlatButton("", true, apply);
+            applyButton.style.height = 22f;
+            applyButton.style.flexGrow = 1f;
+            applyButton.style.flexBasis = 0f;
+            applyButton.style.marginRight = 4f;
+            actions.Add(applyButton);
+
+            var cancelButton = FlatButton("Cancel", false, cancel);
+            cancelButton.style.width = 70f;
+            actions.Add(cancelButton);
+            preview.Add(actions);
+
+            Show(preview, false);
+            return preview;
+        }
+
+        private static string ContainerLabel(Transform container)
+        {
+            if (container == null) return "scene root";
+            return container.name.StartsWith(HeaderPrefix) ? CleanName(container.name) : container.name;
+        }
+
+        private void BuildFamiliesPreview()
+        {
+            var choicesBefore = _familyRows.ByObject()
+                .ToDictionary(pair => pair.Key, pair => (
+                    Marked: pair.Value.Check.value,
+                    ParentName: pair.Value.ParentName.value,
+                    Destination: pair.Value.Destination?.value));
+
+            _familyRows.Clear();
+            _familiesList.Clear();
+            _familiesBatch.Clear();
+            _familiesPreviewOpen = true;
+            Show(_familiesPreview, true);
+
+            var plan = PlanFamilies();
+            if (plan.Count == 0)
+            {
+                _familiesList.Add(Note(NothingToOrganize("similar objects to group")));
+                UpdateFamiliesCount();
+                return;
+            }
+
+            var hint = Note("Each row is a set of objects with the same name or prefab. The field is the name of their parent. A set at the scene root can also go into a group.");
+            hint.style.marginBottom = 4f;
+            _familiesBatch.Add(hint);
+            _familiesBatch.Add(_familyRows.MarkLinks());
+
+            var destinations = new List<string> { "" };
+            destinations.AddRange(OrganizeDestinations());
+
+            foreach (var suggestion in plan)
+            {
+                string joins = suggestion.ExistingParent != null ? ", joins the existing parent" : "";
+                var entry = new FamilyRow
+                {
+                    Object = suggestion.Members[0],
+                    Members = suggestion.Members,
+                    Label = $"{suggestion.Family}  ({suggestion.Members.Count} in {ContainerLabel(suggestion.Container)}{joins})",
+                    Suggestion = suggestion,
+                };
+
+                bool marked = true;
+                string parentName = suggestion.Family;
+                string destination = SuggestedGroupFor(suggestion);
+                if (choicesBefore.TryGetValue(entry.Object, out var before))
+                {
+                    marked = before.Marked;
+                    parentName = before.ParentName;
+                    if (destinations.Contains(before.Destination)) destination = before.Destination;
+                }
+
+                var row = _familyRows.Add(entry, marked, TextColor);
+                row[1].style.minWidth = 90f;
+
+                var arrow = new Label("→") { pickingMode = PickingMode.Ignore };
+                arrow.style.color = MutedColor;
+                arrow.style.marginLeft = 6f;
+                arrow.style.marginRight = 2f;
+                row.Add(arrow);
+
+                entry.ParentName = new TextField { value = parentName };
+                entry.ParentName.style.width = 130f;
+                entry.ParentName.style.flexShrink = 1f;
+                row.Add(entry.ParentName);
+
+                _familiesList.Add(row);
+                if (suggestion.Container != null) continue;
+
+                entry.Destination = new DropdownPill(destinations, Mathf.Max(0, destinations.IndexOf(destination)))
+                {
+                    MenuLabel = path => path.Length == 0 ? "Stay at the root" : DestinationMenuLabel(path),
+                    FieldLabel = path => path.Length == 0 ? "Stay at the root" : DestinationFieldLabel(path),
+                };
+                entry.Destination.style.width = 140f;
+                entry.Destination.style.flexShrink = 1f;
+                entry.Destination.style.marginLeft = 4f;
+                entry.Destination.Changed += path =>
+                {
+                    foreach (var other in _familyRows.SelectedWith(entry))
+                        other.Destination?.SetValueWithoutNotify(path);
+                };
+                row.Add(entry.Destination);
+            }
+
+            _familyRows.RefreshSelection();
+            UpdateFamiliesCount();
+        }
+
+        private void UpdateFamiliesCount()
+        {
+            var marked = _familyRows.Rows.Where(r => r.Marked).ToList();
+            int objects = marked.Sum(r => r.Members.Count);
+
+            _familiesNote.text = _familyRows.Rows.Count == 0 ? "" : $"{marked.Count} of {_familyRows.Rows.Count} marked";
+            _familiesApply.text = $"Group {objects} object(s) under {marked.Count} parent(s)";
+            _familiesApply.SetEnabled(marked.Count > 0);
+        }
+
+        private void ApplyFamiliesPreview()
+        {
+            var families = _familyRows.Rows
+                .Where(r => r.Marked)
+                .Select(r =>
+                {
+                    string typed = r.ParentName.value.Trim();
+                    return (r.Suggestion, typed.Length == 0 ? r.Suggestion.Family : typed, r.Destination?.value);
+                })
+                .ToList();
+
+            ClearFamiliesPreview();
+            ApplyFamilies(families);
+        }
+
+        private void ClearFamiliesPreview()
+        {
+            _familiesPreviewOpen = false;
+            _familyRows.Clear();
+            _familiesList.Clear();
+            _familiesBatch.Clear();
+            _familiesNote.text = "";
+            Show(_familiesPreview, false);
+        }
+
+        private void BuildNamesPreview()
+        {
+            var markedBefore = _nameRows.ByObject().ToDictionary(pair => pair.Key, pair => pair.Value.Check.value);
+
+            _nameRows.Clear();
+            _namesList.Clear();
+            _namesBatch.Clear();
+            _namesPreviewOpen = true;
+            Show(_namesPreview, true);
+
+            var plan = PlanNormalize();
+            if (plan.Count == 0)
+            {
+                _namesList.Add(Note(NothingToOrganize("names to clean up")));
+                UpdateNamesCount();
+                return;
+            }
+
+            var hint = Note("Shift-click a checkbox to mark a range.");
+            hint.style.marginBottom = 4f;
+            _namesBatch.Add(hint);
+            _namesBatch.Add(_nameRows.MarkLinks());
+
+            foreach (var (go, newName) in plan)
+            {
+                var entry = new NameRow { Object = go, NewName = newName };
+                bool marked = !markedBefore.TryGetValue(go, out bool before) || before;
+                var row = _nameRows.Add(entry, marked, MutedColor);
+
+                var arrow = new Label("→") { pickingMode = PickingMode.Ignore };
+                arrow.style.color = MutedColor;
+                arrow.style.marginLeft = 6f;
+                arrow.style.marginRight = 6f;
+                row.Add(arrow);
+
+                var renamed = new Label(newName) { pickingMode = PickingMode.Ignore };
+                renamed.style.flexGrow = 1f;
+                renamed.style.flexShrink = 1f;
+                renamed.style.flexBasis = 0f;
+                renamed.style.overflow = Overflow.Hidden;
+                renamed.style.color = TextColor;
+                row.Add(renamed);
+
+                _namesList.Add(row);
+            }
+
+            _nameRows.RefreshSelection();
+            UpdateNamesCount();
+        }
+
+        private void UpdateNamesCount()
+        {
+            int total = _nameRows.Rows.Count;
+            int marked = _nameRows.Rows.Count(r => r.Marked);
+            _namesNote.text = total == 0 ? "" : $"{marked} of {total} marked";
+            _namesApply.text = $"Rename {marked} object(s)";
+            _namesApply.SetEnabled(marked > 0);
+        }
+
+        private void ApplyNamesPreview()
+        {
+            var renames = _nameRows.Rows
+                .Where(r => r.Marked)
+                .Select(r => (r.Object, r.NewName))
+                .ToList();
+
+            ClearNamesPreview();
+            ApplyNormalize(renames);
+        }
+
+        private void ClearNamesPreview()
+        {
+            _namesPreviewOpen = false;
+            _nameRows.Clear();
+            _namesList.Clear();
+            _namesBatch.Clear();
+            _namesNote.text = "";
+            Show(_namesPreview, false);
+        }
+
         private void BuildAutoPreview()
         {
+            var choicesBefore = _autoRows.ByObject()
+                .ToDictionary(pair => pair.Key, pair => (Marked: pair.Value.Check.value, Destination: pair.Value.Destination?.value));
+
             _autoRows.Clear();
             _autoList.Clear();
             _autoBatch.Clear();
-            _autoCheckAnchor = -1;
-            _autoNameAnchor = -1;
+            _autoPreviewOpen = true;
 
-            var plan = PlanAutoOrganize();
+            var plan = PlanAutoOrganize()
+                .Select(p => (p.Object, p.Destination, StaysAtRoot: NeedsSceneRoot(p.Object)))
+                .OrderBy(p => p.StaysAtRoot)
+                .ThenBy(p => p.Destination == null)
+                .ToList();
             var destinations = OrganizeDestinations();
             Show(_autoPreview, true);
 
@@ -475,62 +767,47 @@ namespace ArtTools.EnvironmentArt
 
             BuildAutoBatch(destinations);
 
-            foreach (var (go, suggestion) in plan.OrderBy(p => p.Destination == null))
+            foreach (var (go, suggested, staysAtRoot) in plan)
             {
-                var entry = new AutoRow { Object = go };
-
-                var row = Row();
-                row.style.height = 22f;
-                Radius(row, 3f);
-                Padding(row, 0f, 2f);
-
-                var check = new Toggle { value = suggestion != null };
-                check.style.marginRight = 4f;
-
-                check.RegisterCallback<PointerDownEvent>(e =>
+                string suggestion = suggested;
+                bool marked = suggestion != null;
+                if (!staysAtRoot && choicesBefore.TryGetValue(go, out var before))
                 {
-                    if (e.button != 0 || !e.shiftKey) return;
-                    check.SetValueWithoutNotify(!check.value);
-                    OnAutoCheck(entry, check.value, true);
-                    e.StopPropagation();
-                }, TrickleDown.TrickleDown);
-                check.RegisterValueChangedCallback(e => OnAutoCheck(entry, e.newValue, false));
-                row.Add(check);
+                    marked = before.Marked;
+                    if (destinations.Contains(before.Destination)) suggestion = before.Destination;
+                }
 
-                var name = new Label(go.name)
+                var entry = new AutoRow { Object = go, Locked = staysAtRoot };
+                var row = _autoRows.Add(entry, marked, suggestion != null ? TextColor : MutedColor);
+                _autoList.Add(row);
+
+                if (staysAtRoot)
                 {
-                    tooltip = "Click to select this object. Shift-click selects up to here, Ctrl-click adds or removes it.",
-                };
-                name.style.flexGrow = 1f;
-                name.style.flexShrink = 1f;
-                name.style.overflow = Overflow.Hidden;
-                name.style.color = suggestion != null ? TextColor : MutedColor;
+                    var stays = new Label("Stays at the root");
+                    stays.style.width = 170f;
+                    stays.style.flexShrink = 0f;
+                    stays.style.color = MutedColor;
+                    row.Add(stays);
+                    continue;
+                }
 
-                name.RegisterCallback<ClickEvent>(e => OnAutoNameClick(entry, e));
-                row.Add(name);
-
-                int index = suggestion != null ? Mathf.Max(0, destinations.IndexOf(suggestion)) : 0;
-                var destination = new DropdownPill(destinations, index)
+                var destination = new DropdownPill(destinations, Mathf.Max(0, destinations.IndexOf(suggestion)))
                 {
                     MenuLabel = DestinationMenuLabel,
                     FieldLabel = DestinationFieldLabel,
 
                     AlwaysNotify = true,
                 };
+                if (suggestion == null) destination.SetValueWithoutNotify("");
                 destination.style.width = 170f;
                 destination.style.flexShrink = 0f;
 
                 destination.Changed += value => OnAutoDestination(entry, value);
                 row.Add(destination);
-
-                entry.Row = row;
-                entry.Check = check;
                 entry.Destination = destination;
-                _autoRows.Add(entry);
-                _autoList.Add(row);
             }
 
-            RefreshAutoSelection();
+            _autoRows.RefreshSelection();
             UpdateAutoCount();
         }
 
@@ -540,9 +817,7 @@ namespace ArtTools.EnvironmentArt
             hint.style.marginBottom = 4f;
             _autoBatch.Add(hint);
 
-            var row = Row();
-            row.Add(LinkButton("Mark all", () => MarkAllAuto(true)));
-            row.Add(LinkButton("Mark none", () => MarkAllAuto(false)));
+            var row = _autoRows.MarkLinks();
 
             var spacer = new VisualElement();
             spacer.style.flexGrow = 1f;
@@ -553,115 +828,22 @@ namespace ArtTools.EnvironmentArt
                 MenuLabel = DestinationMenuLabel,
                 FieldLabel = _ => "Set marked to…",
                 AlwaysNotify = true,
-                tooltip = "Gives every marked row the group you pick here.",
             };
             setMarked.style.width = 170f;
             setMarked.style.flexShrink = 0f;
             setMarked.Changed += value =>
             {
-                foreach (var marked in _autoRows.Where(r => r.Check.value))
+                foreach (var marked in _autoRows.Rows.Where(r => r.Marked))
                     marked.Destination.SetValueWithoutNotify(value);
+                UpdateAutoCount();
             };
             row.Add(setMarked);
             _autoBatch.Add(row);
         }
 
-        private void MarkAllAuto(bool value)
-        {
-            foreach (var row in _autoRows) row.Check.SetValueWithoutNotify(value);
-            if (!value) DeselectAuto(_autoRows);
-            UpdateAutoCount();
-        }
-
-        private static void DeselectAuto(List<AutoRow> rows)
-        {
-            var leaving = new HashSet<Object>(rows.Where(r => r.Object != null).Select(r => (Object)r.Object));
-            var staying = Selection.objects.Where(o => !leaving.Contains(o)).ToArray();
-            if (staying.Length != Selection.objects.Length) Selection.objects = staying;
-        }
-
-        private static bool IsAutoSelected(AutoRow row) => row.Object != null && Selection.Contains(row.Object);
-
-        private List<AutoRow> AutoSelectedWith(AutoRow row)
-        {
-            return IsAutoSelected(row)
-                ? _autoRows.Where(r => r != row && IsAutoSelected(r)).ToList()
-                : new List<AutoRow>();
-        }
-
-        private void RefreshAutoSelection()
-        {
-            var tint = new Color(Accent.r, Accent.g, Accent.b, 0.3f);
-            foreach (var row in _autoRows)
-                row.Row.style.backgroundColor = IsAutoSelected(row) ? tint : Color.clear;
-        }
-
-        private void OnAutoNameClick(AutoRow row, ClickEvent e)
-        {
-            if (row.Object == null || e.button != 0) return;
-
-            int index = _autoRows.IndexOf(row);
-            bool shift = e.shiftKey;
-            bool toggle = e.actionKey;
-
-            if (shift && _autoNameAnchor >= 0 && _autoNameAnchor < _autoRows.Count)
-            {
-                int from = Mathf.Min(_autoNameAnchor, index);
-                int to = Mathf.Max(_autoNameAnchor, index);
-                Selection.objects = _autoRows.Skip(from).Take(to - from + 1)
-                    .Where(r => r.Object != null).Select(r => (Object)r.Object).ToArray();
-                return;
-            }
-
-            if (toggle)
-            {
-                var selected = Selection.objects.ToList();
-                if (!selected.Remove(row.Object)) selected.Add(row.Object);
-                Selection.objects = selected.ToArray();
-            }
-            else
-            {
-                Selection.activeGameObject = row.Object;
-                EditorGUIUtility.PingObject(row.Object);
-            }
-            _autoNameAnchor = index;
-        }
-
-        private void OnAutoCheck(AutoRow row, bool value, bool shift)
-        {
-            int index = _autoRows.IndexOf(row);
-
-            if (shift && _autoCheckAnchor >= 0 && _autoCheckAnchor < _autoRows.Count)
-            {
-                int from = Mathf.Min(_autoCheckAnchor, index);
-                int to = Mathf.Max(_autoCheckAnchor, index);
-                for (int i = from; i <= to; i++) _autoRows[i].Check.SetValueWithoutNotify(value);
-
-                var range = _autoRows.Skip(from).Take(to - from + 1).ToList();
-                if (value)
-                    Selection.objects = range.Where(r => r.Object != null).Select(r => (Object)r.Object).ToArray();
-                else
-                    DeselectAuto(range);
-            }
-            else
-            {
-                var others = AutoSelectedWith(row);
-                foreach (var other in others) other.Check.SetValueWithoutNotify(value);
-
-                if (!value && others.Count > 0)
-                {
-                    others.Add(row);
-                    DeselectAuto(others);
-                }
-            }
-
-            _autoCheckAnchor = index;
-            UpdateAutoCount();
-        }
-
         private void OnAutoDestination(AutoRow row, string value)
         {
-            foreach (var other in AutoSelectedWith(row))
+            foreach (var other in _autoRows.SelectedWith(row))
             {
                 other.Destination.SetValueWithoutNotify(value);
                 other.Check.SetValueWithoutNotify(true);
@@ -674,38 +856,43 @@ namespace ArtTools.EnvironmentArt
         private static string DestinationMenuLabel(string path)
         {
             int slash = path.LastIndexOf('/');
-            return slash < 0 ? path : "      \u21B3 " + path.Substring(slash + 1);
+            return slash < 0 ? path : "      ↳ " + path.Substring(slash + 1);
         }
 
         private static string DestinationFieldLabel(string path)
         {
-            return path.Replace("/", " \u203A ");
+            return path.Length == 0 ? "Choose group…" : path.Replace("/", " › ");
         }
 
         private void UpdateAutoCount()
         {
-            int total = _autoRows.Count;
-            int marked = _autoRows.Count(r => r.Check.value);
-            _autoNote.text = total == 0 ? "" : $"{marked} of {total} marked";
-            _autoApply.text = $"Move {marked} object(s)";
-            _autoApply.SetEnabled(marked > 0);
+            int total = _autoRows.Rows.Count(r => !r.Locked);
+            int marked = _autoRows.Rows.Count(r => r.Marked);
+            int movable = _autoRows.Rows.Count(r => r.Marked && r.HasDestination);
+            string waiting = marked > movable ? $", {marked - movable} without a group" : "";
+
+            _autoNote.text = total == 0 ? "" : $"{marked} of {total} marked{waiting}";
+            _autoApply.text = $"Move {movable} object(s)";
+            _autoApply.SetEnabled(movable > 0);
         }
 
         private void ApplyAutoPreview()
         {
-            var moves = _autoRows
-                .Where(r => r.Check.value)
+            var moves = _autoRows.Rows
+                .Where(r => r.Marked && r.HasDestination)
                 .Select(r => (r.Object, r.Destination.value))
                 .ToList();
 
-            ApplyAutoOrganize(moves);
             ClearAutoPreview();
+            ApplyAutoOrganize(moves);
         }
 
         private void ClearAutoPreview()
         {
+            _autoPreviewOpen = false;
             _autoRows.Clear();
             _autoList.Clear();
+            _autoBatch.Clear();
             _autoNote.text = "";
             Show(_autoPreview, false);
         }
@@ -781,7 +968,6 @@ namespace ArtTools.EnvironmentArt
             textRow.Add(_textColor);
 
             _autoTextButton = FlatButton("Auto", false, () => EditSelected("auto text", s => s.Text = null));
-            _autoTextButton.tooltip = "Picks the text color from the background.";
             _autoTextButton.style.width = 48f;
             _autoTextButton.style.marginLeft = 4f;
             textRow.Add(_autoTextButton);
@@ -827,7 +1013,6 @@ namespace ArtTools.EnvironmentArt
             _actionsRow = actions;
 
             _undoButton = FlatButton("Undo", false, UndoLast);
-            _undoButton.tooltip = "Undoes the last change made in this tab.";
             _undoButton.style.flexGrow = 1f;
             _undoButton.style.flexBasis = 0f;
             _undoButton.style.marginRight = 4f;
@@ -839,7 +1024,6 @@ namespace ArtTools.EnvironmentArt
                 foreach (var name in SelectedBannerNames())
                     HierarchyGroupColors.Clear(name);
             });
-            _resetButton.tooltip = "Styles are saved by banner name, just for you.";
             _resetButton.style.flexGrow = 1f;
             _resetButton.style.flexBasis = 0f;
             actions.Add(_resetButton);
@@ -901,11 +1085,20 @@ namespace ArtTools.EnvironmentArt
             grid.style.marginRight = -3f;
             grid.style.marginBottom = -3f;
 
+            _presetTiles.Clear();
             foreach (var preset in ColorPresets)
                 grid.Add(BuildPresetTile(preset));
 
             card.Add(grid);
             return card;
+        }
+
+        private static void PaintPresetBorder(VisualElement tile, Color border)
+        {
+            tile.style.borderTopColor = border;
+            tile.style.borderBottomColor = border;
+            tile.style.borderLeftColor = border;
+            tile.style.borderRightColor = border;
         }
 
         private VisualElement BuildPresetTile(ColorPreset preset)
@@ -918,6 +1111,11 @@ namespace ArtTools.EnvironmentArt
             Margin(tile, 3f);
             Padding(tile, 6f, 6f);
             Radius(tile, 6f);
+            tile.style.borderTopWidth = 1f;
+            tile.style.borderBottomWidth = 1f;
+            tile.style.borderLeftWidth = 1f;
+            tile.style.borderRightWidth = 1f;
+            PaintPresetBorder(tile, Color.clear);
             tile.AddManipulator(new Clickable(() => ApplyPreset(preset)));
             HoverFeedback(tile);
 
@@ -936,14 +1134,27 @@ namespace ArtTools.EnvironmentArt
             }
             tile.Add(palette);
 
+            var caption = Row();
+            caption.pickingMode = PickingMode.Ignore;
+            caption.style.marginTop = 5f;
+            caption.style.marginLeft = 1f;
+            caption.style.alignItems = Align.Center;
+
             var name = new Label(preset.Name) { pickingMode = PickingMode.Ignore };
             name.style.fontSize = 11f;
             name.style.unityFontStyleAndWeight = FontStyle.Bold;
             name.style.color = TextColor;
-            name.style.marginTop = 5f;
-            name.style.marginLeft = 1f;
-            tile.Add(name);
+            name.style.flexGrow = 1f;
+            caption.Add(name);
 
+            var inUse = new Label("In use") { pickingMode = PickingMode.Ignore };
+            inUse.style.fontSize = 10f;
+            inUse.style.color = MutedColor;
+            Show(inUse, false);
+            caption.Add(inUse);
+
+            tile.Add(caption);
+            _presetTiles.Add((preset, tile, inUse));
             return tile;
         }
 
@@ -964,7 +1175,6 @@ namespace ArtTools.EnvironmentArt
             card.Add(_lightnessSlider);
 
             _resetAdjustButton = FlatButton("Reset", false, HierarchyViewPrefs.ResetBannerAdjust);
-            _resetAdjustButton.tooltip = "Shows the colors as they were picked.";
             _resetAdjustButton.style.marginTop = 6f;
             card.Add(_resetAdjustButton);
 
@@ -1057,6 +1267,32 @@ namespace ArtTools.EnvironmentArt
             PushUndo("preset");
             HierarchyGroupColors.SetBackgrounds(names, index => preset.ColorAt(index, names.Count));
             Debug.Log($"[Hierarchy Organizer] Painted {names.Count} banner(s) with the {preset.Name} preset.");
+        }
+
+        private static ColorPreset PresetInUse()
+        {
+            var names = SceneBannerNames();
+            if (names.Count == 0) return null;
+            if (names.All(name => HierarchyGroupColors.Get(name)?.Background == null)) return DefaultPreset;
+
+            return ColorPresets.FirstOrDefault(preset => Enumerable.Range(0, names.Count).All(index =>
+                SameColor(HierarchyHeaderRenderer.HeaderColor(names[index]), preset.ColorAt(index, names.Count))));
+        }
+
+        private static bool SameColor(Color32 a, Color32 b)
+        {
+            return a.r == b.r && a.g == b.g && a.b == b.b;
+        }
+
+        private void RefreshPresets()
+        {
+            var inUse = PresetInUse();
+            foreach (var (preset, tile, badge) in _presetTiles)
+            {
+                bool active = preset == inUse;
+                PaintPresetBorder(tile, active ? TextColor : Color.clear);
+                Show(badge, active);
+            }
         }
 
         private void PushUndo(string label, GameObject renamed = null, string oldName = null)
@@ -1210,6 +1446,7 @@ namespace ArtTools.EnvironmentArt
 
             RefreshOrganize();
             RefreshBanner();
+            RefreshPresets();
             RefreshSettings();
             RefreshLint();
         }
@@ -1223,7 +1460,11 @@ namespace ArtTools.EnvironmentArt
         {
             int selected = SelectedSceneObjects().Length;
             _selectedCount.text = $"{selected} selected";
-            _normalizeButton.SetEnabled(selected > 0);
+
+            _organizeScopes.Clear();
+            _organizeScopes.AddRange(OrganizeScopes());
+            _familiesScope.SetValueWithoutNotify(HierarchyViewPrefs.OrganizeInside);
+            _namesScope.SetValueWithoutNotify(HierarchyViewPrefs.OrganizeInside);
 
             _groupButtons.Clear();
             var groups = FindHeaderGroups();
@@ -1241,7 +1482,6 @@ namespace ArtTools.EnvironmentArt
                 var button = new Button(() => MoveSelectionToGroup(target))
                 {
                     text = $"{look.CleanName}  ({group.transform.childCount})",
-                    tooltip = look.Tooltip,
                 };
                 button.style.backgroundColor = look.HasBackground ? look.Background : ControlColor;
                 button.style.color = look.Text;

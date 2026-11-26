@@ -36,8 +36,6 @@ namespace ArtTools.EnvironmentArt
         private class DefaultGroup
         {
             public string Name;
-            public Color Color;
-            public string Tooltip;
             public string[] Aliases = System.Array.Empty<string>();
         }
 
@@ -45,53 +43,40 @@ namespace ArtTools.EnvironmentArt
         {
             new DefaultGroup
             {
-                Name = "SETUP", Color = FromHex(0x3d64c7),
-                Tooltip = "Cameras, managers and core scene systems.",
+                Name = "SETUP",
                 Aliases = new[] { "CORE" },
             },
             new DefaultGroup
             {
-                Name = "LIGHTING", Color = FromHex(0x4b8f27),
-                Tooltip = "Lights, reflection probes, light probes and lighting volumes.",
+                Name = "LIGHTING",
             },
             new DefaultGroup
             {
-                Name = "VFX", Color = FromHex(0xbb7723),
-                Tooltip = "Particle systems and visual effects.",
+                Name = "VFX",
             },
             new DefaultGroup
             {
-                Name = "AUDIO", Color = FromHex(0x7137a5),
-                Tooltip = "Audio sources, ambiences and music.",
+                Name = "AUDIO",
             },
             new DefaultGroup
             {
-                Name = "UI", Color = FromHex(0xb85b88),
-                Tooltip = "Canvases and interface elements.",
+                Name = "UI",
             },
             new DefaultGroup
             {
-                Name = "GAMEPLAY", Color = FromHex(0x539ba5),
-                Tooltip = "Level design objects: spawns, interactables and triggers.",
+                Name = "GAMEPLAY",
             },
             new DefaultGroup
             {
-                Name = "ENVIRONMENT", Color = FromHex(0xb74843),
-                Tooltip = "Static scenery: terrain, architecture and static meshes.",
+                Name = "ENVIRONMENT",
             },
             new DefaultGroup
             {
-                Name = "PROPS", Color = FromHex(0xb1992f),
-                Tooltip = "Dynamic or interactive set dressing.",
+                Name = "PROPS",
             },
         };
 
         private static readonly string[] GameplaySubGroups = { "Spawns", "Interactables", "Triggers" };
-
-        private static Color FromHex(int hex)
-        {
-            return new Color(((hex >> 16) & 0xFF) / 255f, ((hex >> 8) & 0xFF) / 255f, (hex & 0xFF) / 255f);
-        }
 
         private static DefaultGroup FindDefaultGroup(string cleanName)
         {
@@ -104,16 +89,17 @@ namespace ArtTools.EnvironmentArt
             return FindDefaultGroup(cleanName)?.Name ?? cleanName.ToUpperInvariant();
         }
 
-        public static string TooltipFor(string cleanName)
-        {
-            return FindDefaultGroup(cleanName)?.Tooltip ?? "Custom group.";
-        }
-
         internal static bool TryGetDefaultColor(string cleanName, out Color color)
         {
-            var group = FindDefaultGroup(cleanName);
-            color = group?.Color ?? default;
-            return group != null;
+            int index = System.Array.IndexOf(DefaultGroups, FindDefaultGroup(cleanName));
+            color = index < 0 ? default : DefaultPaletteColor((uint)index);
+            return index >= 0;
+        }
+
+        internal static Color DefaultPaletteColor(uint seed)
+        {
+            var colors = DefaultPreset.Colors;
+            return colors[seed % (uint)colors.Length];
         }
 
         [MenuItem("Art Tools/Hierarchy Organizer", true)]
@@ -279,8 +265,19 @@ namespace ArtTools.EnvironmentArt
 
         private static bool ScriptNeedsRoot(System.Type type)
         {
+            if (type == null || type == typeof(MonoBehaviour)) return false;
             if (RootOnlyTypes.TryGetValue(type, out bool known)) return known;
 
+            bool needsRoot = SourceMentionsDontDestroyOnLoad(type)
+                          || CompiledCodeCallsDontDestroyOnLoad(type)
+                          || ScriptNeedsRoot(type.BaseType);
+
+            RootOnlyTypes[type] = needsRoot;
+            return needsRoot;
+        }
+
+        private static bool SourceMentionsDontDestroyOnLoad(System.Type type)
+        {
             if (_scriptsByName == null)
             {
                 _scriptsByName = new Dictionary<string, MonoScript>();
@@ -288,23 +285,29 @@ namespace ArtTools.EnvironmentArt
                     if (script != null) _scriptsByName[script.name] = script;
             }
 
-            bool needsRoot = false;
+            string name = type.Name;
+            int tick = name.IndexOf('`');
+            if (tick >= 0) name = name.Substring(0, tick);
 
-            for (var current = type; current != null && current != typeof(MonoBehaviour); current = current.BaseType)
+            return _scriptsByName.TryGetValue(name, out var source) && source.text.Contains("DontDestroyOnLoad");
+        }
+
+        private static bool CompiledCodeCallsDontDestroyOnLoad(System.Type type)
+        {
+            try
             {
-                string name = current.Name;
-                int tick = name.IndexOf('`');
-                if (tick >= 0) name = name.Substring(0, tick);
-
-                if (_scriptsByName.TryGetValue(name, out var script) && script.text.Contains("DontDestroyOnLoad"))
-                {
-                    needsRoot = true;
-                    break;
-                }
+                return CompiledCalls.Calls(type, typeof(Object), nameof(Object.DontDestroyOnLoad));
             }
-
-            RootOnlyTypes[type] = needsRoot;
-            return needsRoot;
+            catch (System.Exception unreadable) when (unreadable is System.TypeLoadException
+                                                   || unreadable is System.MissingMemberException
+                                                   || unreadable is IOException
+                                                   || unreadable is System.BadImageFormatException
+                                                   || unreadable is System.ArgumentException
+                                                   || unreadable is System.NotSupportedException)
+            {
+                Debug.LogWarning($"[Hierarchy Organizer] Could not read the compiled code of {type.Name}: {unreadable.Message}");
+                return false;
+            }
         }
 
         internal static bool NeedsSceneRoot(GameObject go)
@@ -318,21 +321,22 @@ namespace ArtTools.EnvironmentArt
         {
             if (NeedsSceneRoot(go)) return null;
 
-            var tokens = NameTokens(go.name);
-            foreach (var (keyword, destination) in NameRules)
-                if (tokens.Any(t => t == keyword || t == keyword + "s")) return destination;
+            bool hasMesh = go.GetComponentInChildren<MeshRenderer>(true) != null
+                        || go.GetComponentInChildren<SkinnedMeshRenderer>(true) != null;
+            bool isStaticMesh = hasMesh && go.GetComponentsInChildren<Transform>(true).Any(t => t.gameObject.isStatic);
+
+            if (!isStaticMesh)
+            {
+                var tokens = NameTokens(go.name);
+                foreach (var (keyword, destination) in NameRules)
+                    if (tokens.Any(t => t == keyword || t == keyword + "s")) return destination;
+            }
 
             if (go.GetComponentInChildren<Terrain>(true) != null) return "ENVIRONMENT";
             if (go.GetComponentInChildren<Canvas>(true) != null) return "UI";
             if (go.GetComponentInChildren<Camera>(true) != null) return "SETUP";
 
-            bool hasMesh = go.GetComponentInChildren<MeshRenderer>(true) != null
-                        || go.GetComponentInChildren<SkinnedMeshRenderer>(true) != null;
-            if (hasMesh)
-            {
-                bool isStatic = go.GetComponentsInChildren<Transform>(true).Any(t => t.gameObject.isStatic);
-                return isStatic ? "ENVIRONMENT" : "PROPS";
-            }
+            if (hasMesh) return isStaticMesh ? "ENVIRONMENT" : "PROPS";
 
             if (go.GetComponentInChildren<ParticleSystem>(true) != null) return "VFX";
 
@@ -417,6 +421,7 @@ namespace ArtTools.EnvironmentArt
             {
                 if (go == null || string.IsNullOrEmpty(destination)) continue;
                 if (go.scene != scene || go.transform.parent != null) continue;
+                if (NeedsSceneRoot(go)) continue;
 
                 Undo.SetTransformParent(go.transform, GetOrCreateGroupPath(destination, cache, out _).transform, "Move to group");
                 moved++;
@@ -429,87 +434,300 @@ namespace ArtTools.EnvironmentArt
             return moved;
         }
 
-        private static string BaseName(string name)
+        private static SiblingNames.DuplicateScheme ProjectDuplicateScheme()
         {
-            var match = Regex.Match(name.Trim(), @"^(.*?)(?:\s*\(\d+\))*$");
-            var baseName = match.Groups[1].Value.Trim();
-            return string.IsNullOrEmpty(baseName) ? name.Trim() : baseName;
+            switch (EditorSettings.gameObjectNamingScheme)
+            {
+                case EditorSettings.NamingScheme.Dot: return SiblingNames.DuplicateScheme.Dot;
+                case EditorSettings.NamingScheme.Underscore: return SiblingNames.DuplicateScheme.Underscore;
+                default: return SiblingNames.DuplicateScheme.Parenthesis;
+            }
         }
 
-        private static string Stem(string name)
+        private static string SeriesBaseOf(GameObject go, SiblingNames.DuplicateScheme scheme)
         {
-            var stem = Regex.Replace(name.Trim(), @"(?:\s*\(\d+\)|[._][0-9]+)+$", "");
-            return string.IsNullOrEmpty(stem) ? name.Trim() : stem;
+            if (!PrefabUtility.IsAnyPrefabInstanceRoot(go)) return SiblingNames.SeriesBase(go.name, scheme);
+
+            var prefabName = Path.GetFileNameWithoutExtension(PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(go));
+            if (string.IsNullOrEmpty(prefabName)) return SiblingNames.SeriesBase(go.name, scheme);
+
+            bool namedAfterPrefab = SiblingNames.WithoutDuplicateSuffix(go.name, scheme) == prefabName
+                                 || SiblingNames.TryGetNumber(go.name, prefabName, out _);
+            return namedAfterPrefab ? prefabName : SiblingNames.SeriesBase(go.name, scheme);
         }
 
-        private static string BaseNameOf(GameObject go)
+        private static bool IsDefaultSubGroup(GameObject go)
         {
-            var fallback = BaseName(go.name);
-            if (!PrefabUtility.IsAnyPrefabInstanceRoot(go)) return fallback;
+            var parent = go.transform.parent;
+            if (parent == null || !parent.name.StartsWith(HeaderPrefix)) return false;
 
-            var assetPath = PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(go);
-            if (string.IsNullOrEmpty(assetPath)) return fallback;
-
-            var prefabName = Path.GetFileNameWithoutExtension(assetPath);
-            return Stem(go.name) == Stem(prefabName) ? prefabName : fallback;
+            return CanonicalGroupKey(CleanName(parent.name)) == "GAMEPLAY" && GameplaySubGroups.Contains(go.name);
         }
 
-        private static void NormalizeSelectedNames()
+        private static bool CanNormalize(GameObject go)
         {
-            var selection = SelectedSceneObjects()
-                .Where(go => !go.name.StartsWith(HeaderPrefix) && !IsTitle(go.name))
-                .OrderBy(go => go.transform.GetSiblingIndex())
+            if ((go.hideFlags & HideFlags.HideInHierarchy) != 0) return false;
+            if (PrefabUtility.IsPartOfPrefabInstance(go) && !PrefabUtility.IsOutermostPrefabInstanceRoot(go)) return false;
+
+            return !go.name.StartsWith(HeaderPrefix) && !IsTitle(go.name) && !IsDefaultSubGroup(go);
+        }
+
+        private static List<GameObject> GroupsNamed(string cleanName)
+        {
+            string key = CanonicalGroupKey(cleanName);
+            return FindHeaderGroups()
+                .Where(group => CanonicalGroupKey(CleanName(group.name)) == key)
                 .ToList();
-            if (selection.Count == 0) return;
+        }
 
+        private static List<string> OrganizeScopes()
+        {
+            var scopes = new List<string> { "" };
+            scopes.AddRange(FindHeaderGroups()
+                .GroupBy(group => CanonicalGroupKey(CleanName(group.name)))
+                .Select(sameName => CleanName(sameName.First().name)));
+
+            string chosen = HierarchyViewPrefs.OrganizeInside;
+            if (chosen.Length > 0 && GroupsNamed(chosen).Count == 0) scopes.Add(chosen);
+            return scopes;
+        }
+
+        private static string NothingToOrganize(string what)
+        {
+            string scope = HierarchyViewPrefs.OrganizeInside;
+            if (scope.Length == 0) return $"No {what} in this scene.";
+
+            return GroupsNamed(scope).Count == 0
+                ? $"This scene has no {scope} group."
+                : $"No {what} in {scope}.";
+        }
+
+        private static List<GameObject> ObjectsToOrganize()
+        {
+            var found = new List<GameObject>();
+
+            string scope = HierarchyViewPrefs.OrganizeInside;
+            if (scope.Length > 0)
+            {
+                foreach (var group in GroupsNamed(scope)) CollectInside(group.transform, found);
+                return found;
+            }
+
+            foreach (var root in SceneManager.GetActiveScene().GetRootGameObjects())
+            {
+                found.Add(root);
+                if (IsOrganizingSpace(root)) CollectInside(root.transform, found);
+            }
+
+            return found;
+        }
+
+        private static void CollectInside(Transform space, List<GameObject> found)
+        {
+            foreach (Transform child in space)
+            {
+                found.Add(child.gameObject);
+                if (IsOrganizingSpace(child.gameObject)) CollectInside(child, found);
+            }
+        }
+
+        private static readonly List<Component> ComponentsOfOne = new List<Component>();
+
+        private static bool OnlyHasTransform(GameObject go)
+        {
+            go.GetComponents(ComponentsOfOne);
+            return ComponentsOfOne.Count == 1;
+        }
+
+        private static bool IsOrganizingSpace(GameObject go)
+        {
+            if (PrefabUtility.IsPartOfPrefabInstance(go) || PrefabPivotTool.IsPivotHolder(go)) return false;
+
+            return go.name.StartsWith(HeaderPrefix) || OnlyHasTransform(go);
+        }
+
+        private static List<(GameObject Object, string NewName)> PlanNormalize()
+        {
+            var scheme = ProjectDuplicateScheme();
+            var inHierarchyOrder = ObjectsToOrganize();
+
+            var newNames = new Dictionary<GameObject, string>();
+            foreach (var siblings in inHierarchyOrder.GroupBy(go => go.transform.parent))
+            {
+                var renamable = siblings
+                    .Where(go => CanNormalize(go) && !HoldsFamily(go, FamilyOf(go, scheme), scheme))
+                    .ToList();
+                if (renamable.Count == 0) continue;
+
+                var normalized = SiblingNames.Normalized(
+                    renamable.Select(go => (go.name, SeriesBaseOf(go, scheme))).ToList(),
+                    siblings.Except(renamable).Select(go => go.name),
+                    scheme);
+
+                for (int i = 0; i < renamable.Count; i++)
+                    if (renamable[i].name != normalized[i]) newNames[renamable[i]] = normalized[i];
+            }
+
+            return inHierarchyOrder
+                .Where(newNames.ContainsKey)
+                .Select(go => (go, newNames[go]))
+                .ToList();
+        }
+
+        private static void ApplyNormalize(List<(GameObject Object, string NewName)> renames)
+        {
             Undo.SetCurrentGroupName("Normalize Names");
             int undoGroup = Undo.GetCurrentGroup();
 
-            var groups = selection.GroupBy(BaseNameOf).ToList();
-
-            var selected = new HashSet<GameObject>(selection);
-            var taken = new HashSet<string>(selection
-                .GroupBy(go => (object)go.transform.parent ?? go.scene)
-                .Select(g => g.First())
-                .SelectMany(go => go.transform.parent != null
-                    ? go.transform.parent.Cast<Transform>().Select(t => t.gameObject)
-                    : go.scene.IsValid() ? go.scene.GetRootGameObjects() : new GameObject[0])
-                .Where(go => !selected.Contains(go))
-                .Select(go => go.name));
-
             int renamed = 0;
-
-            foreach (var sameBase in groups.OrderBy(g => g.Count()))
+            foreach (var (go, newName) in renames)
             {
-                var objects = sameBase.ToList();
-                string format = objects.Count >= 100 ? "000" : "00";
-                int number = 0;
+                if (go == null || go.name == newName) continue;
 
-                foreach (var go in objects)
-                {
-                    string newName = sameBase.Key;
-
-                    if (objects.Count == 1 && go.name == newName)
-                    {
-                        taken.Add(newName);
-                        continue;
-                    }
-
-                    if (objects.Count > 1 || !taken.Add(newName))
-                    {
-                        do newName = $"{sameBase.Key}_{(++number).ToString(format)}";
-                        while (!taken.Add(newName));
-                    }
-
-                    if (go.name == newName) continue;
-                    Undo.RecordObject(go, "Rename object");
-                    go.name = newName;
-                    renamed++;
-                }
+                Undo.RecordObject(go, "Rename object");
+                go.name = newName;
+                renamed++;
             }
 
             Undo.CollapseUndoOperations(undoGroup);
             Debug.Log($"[Hierarchy Organizer] Renamed {renamed} object(s).");
+        }
+
+        private const int SmallestFamilyWorthAParent = 4;
+
+        private class FamilySuggestion
+        {
+            public string Family;
+            public Transform Container;
+            public List<GameObject> Members;
+            public GameObject ExistingParent;
+        }
+
+        private static string FamilyOf(GameObject go, SiblingNames.DuplicateScheme scheme)
+        {
+            if (PrefabPivotTool.IsPivotHolder(go) && go.transform.childCount > 0)
+                return FamilyOf(go.transform.GetChild(0).gameObject, scheme);
+
+            if (!PrefabUtility.IsAnyPrefabInstanceRoot(go)) return SiblingNames.SeriesBase(go.name, scheme);
+
+            var prefabName = Path.GetFileNameWithoutExtension(PrefabUtility.GetPrefabAssetPathOfNearestInstanceRoot(go));
+            return SiblingNames.SeriesBase(string.IsNullOrEmpty(prefabName) ? go.name : prefabName, scheme);
+        }
+
+        private static bool CanJoinAFamily(GameObject go)
+        {
+            return CanNormalize(go) && (go.transform.parent != null || !NeedsSceneRoot(go));
+        }
+
+        private static bool IsEmptyParent(GameObject go)
+        {
+            return go.transform.childCount > 0 && OnlyHasTransform(go) && !PrefabPivotTool.IsPivotHolder(go);
+        }
+
+        private static bool HoldsFamily(GameObject go, string family, SiblingNames.DuplicateScheme scheme)
+        {
+            if (go.name != family || !IsEmptyParent(go)) return false;
+
+            foreach (Transform child in go.transform)
+                if (FamilyOf(child.gameObject, scheme) != family) return false;
+            return true;
+        }
+
+        private static List<FamilySuggestion> PlanFamilies()
+        {
+            var scheme = ProjectDuplicateScheme();
+            var suggestions = new List<FamilySuggestion>();
+
+            foreach (var siblings in ObjectsToOrganize().GroupBy(go => go.transform.parent))
+            {
+                var candidates = siblings.Where(CanJoinAFamily).ToList();
+
+                foreach (var family in candidates.GroupBy(go => FamilyOf(go, scheme)))
+                {
+                    var existingParent = family.FirstOrDefault(go => HoldsFamily(go, family.Key, scheme));
+                    var members = family.Where(go => go != existingParent).ToList();
+                    if (members.Count == 0 || family.Key.Length == 0) continue;
+
+                    if (existingParent == null)
+                    {
+                        if (members.Count < SmallestFamilyWorthAParent) continue;
+
+                        bool parentAlreadyHoldsOnlyThem = siblings.Key != null
+                                                       && !siblings.Key.name.StartsWith(HeaderPrefix)
+                                                       && members.Count == candidates.Count;
+                        if (parentAlreadyHoldsOnlyThem) continue;
+                    }
+
+                    suggestions.Add(new FamilySuggestion
+                    {
+                        Family = family.Key,
+                        Container = siblings.Key,
+                        Members = members,
+                        ExistingParent = existingParent,
+                    });
+                }
+            }
+
+            return suggestions;
+        }
+
+        private static GameObject FindEmptyParent(Transform container, string name, List<GameObject> members)
+        {
+            var siblings = container != null
+                ? container.Cast<Transform>().Select(t => t.gameObject)
+                : SceneManager.GetActiveScene().GetRootGameObjects();
+
+            return siblings.FirstOrDefault(go => go.name == name
+                                                 && OnlyHasTransform(go)
+                                                 && !PrefabPivotTool.IsPivotHolder(go)
+                                                 && !members.Contains(go));
+        }
+
+        private static string SuggestedGroupFor(FamilySuggestion suggestion)
+        {
+            if (suggestion.Container != null || suggestion.ExistingParent != null) return "";
+
+            return ClassifyObject(suggestion.Members[0]) ?? "";
+        }
+
+        private static void ApplyFamilies(List<(FamilySuggestion Suggestion, string ParentName, string Destination)> families)
+        {
+            Undo.SetCurrentGroupName("Group Similar Objects");
+            int undoGroup = Undo.GetCurrentGroup();
+
+            var cache = BuildGroupCache();
+
+            int moved = 0, parents = 0;
+            foreach (var (suggestion, parentName, destination) in families)
+            {
+                var from = suggestion.Container;
+                var members = suggestion.Members
+                    .Where(go => go != null && go.transform.parent == from && CanJoinAFamily(go))
+                    .ToList();
+                if (members.Count == 0) continue;
+
+                bool intoGroup = from == null && !string.IsNullOrEmpty(destination);
+                var container = intoGroup ? GetOrCreateGroupPath(destination, cache, out _).transform : from;
+
+                var parent = FindEmptyParent(container, parentName, members);
+                if (parent == null)
+                {
+                    parent = new GameObject(parentName);
+                    parent.transform.SetParent(container, false);
+                    if (!intoGroup) parent.transform.SetSiblingIndex(members[0].transform.GetSiblingIndex());
+                    Undo.RegisterCreatedObjectUndo(parent, "Create parent");
+                }
+
+                foreach (var member in members)
+                    Undo.SetTransformParent(member.transform, parent.transform, "Move to parent");
+
+                EditorSceneManager.MarkSceneDirty(parent.scene);
+                moved += members.Count;
+                parents++;
+            }
+
+            Undo.CollapseUndoOperations(undoGroup);
+            Debug.Log($"[Hierarchy Organizer] Grouped {moved} object(s) under {parents} parent(s).");
         }
 
         private static void MoveSelectionToGroup(GameObject group)
@@ -517,11 +735,17 @@ namespace ArtTools.EnvironmentArt
             Undo.SetCurrentGroupName("Move Selection to Group");
             int undoGroup = Undo.GetCurrentGroup();
 
-            int moved = 0;
+            int moved = 0, leftAtRoot = 0;
             foreach (var go in SelectedSceneObjects(true))
             {
                 if (go == group || go.name.StartsWith(HeaderPrefix) || IsTitle(go.name)) continue;
                 if (go.transform.parent == group.transform) continue;
+
+                if (go.transform.parent == null && NeedsSceneRoot(go))
+                {
+                    leftAtRoot++;
+                    continue;
+                }
 
                 Undo.SetTransformParent(go.transform, group.transform, "Move to group");
                 moved++;
@@ -532,6 +756,9 @@ namespace ArtTools.EnvironmentArt
                 EditorSceneManager.MarkSceneDirty(group.scene);
                 Debug.Log($"[Hierarchy Organizer] Moved {moved} object(s) to '{CleanName(group.name)}'.");
             }
+
+            if (leftAtRoot > 0)
+                Debug.Log($"[Hierarchy Organizer] Left {leftAtRoot} object(s) at the scene root because they use DontDestroyOnLoad.");
 
             Undo.CollapseUndoOperations(undoGroup);
         }
@@ -565,7 +792,6 @@ namespace ArtTools.EnvironmentArt
             public Color Text;
             public TextAnchor? Anchor;
             public FontStyle Font;
-            public string Tooltip;
         }
 
         private static readonly Dictionary<string, HeaderLook> Looks = new Dictionary<string, HeaderLook>();
@@ -593,15 +819,12 @@ namespace ArtTools.EnvironmentArt
                 Text = style?.Text ?? (hasBackground ? TextColorFor(OverPanel(background)) : TitleColor),
                 Anchor = style?.Align,
                 Font = style?.Font ?? FontStyle.Bold,
-                Tooltip = HierarchyOrganizerTool.TooltipFor(cleanName),
             };
             Looks[rawName] = look;
             return look;
         }
 
         private static readonly GUIContent HeaderLabel = new GUIContent();
-        private static readonly GUIContent GroupTip = new GUIContent(" ");
-        private static readonly GUIContent ChildrenButtonTip = new GUIContent(" ");
         private static Texture _childrenIcon;
         private static Texture ChildrenIcon =>
             _childrenIcon ??= EditorGUIUtility.IconContent("UnityEditor.SceneHierarchyWindow").image;
@@ -727,9 +950,6 @@ namespace ArtTools.EnvironmentArt
 
             HeaderLabel.text = look.CleanName;
             EditorGUI.LabelField(rect, HeaderLabel, _headerStyle);
-            var groupTipRect = new Rect(rect.x, rect.y, rect.width - 30f, rect.height);
-            GroupTip.tooltip = look.Tooltip;
-            GUI.Label(groupTipRect, GroupTip, EditorStyles.label);
 
             DrawSelectChildrenButton(rect, go, _headerStyle.normal.textColor);
         }
@@ -806,8 +1026,7 @@ namespace ArtTools.EnvironmentArt
                 GUI.Label(iconRect, "≡");
             GUI.color = prevColor;
 
-            ChildrenButtonTip.tooltip = hovering ? $"Select the {group.transform.childCount} object(s) in this group" : "";
-            if (GUI.Button(buttonRect, ChildrenButtonTip, EditorStyles.label))
+            if (GUI.Button(buttonRect, GUIContent.none, EditorStyles.label))
                 SelectChildren(group);
         }
 
@@ -1223,7 +1442,6 @@ namespace ArtTools.EnvironmentArt
                 row.style.backgroundColor = UIE.StyleKeyword.Null;
                 SetFrozenCellsTransparent(row, false);
                 item.Name.style.visibility = UIE.StyleKeyword.Null;
-                nameHost.tooltip = null;
                 if (cleanLabel != null) cleanLabel.style.display = UIE.DisplayStyle.None;
                 item.Icon.style.display = UIE.StyleKeyword.Null;
                 item.OverlayIcon.style.display = UIE.StyleKeyword.Null;
@@ -1283,7 +1501,6 @@ namespace ArtTools.EnvironmentArt
             cleanLabel.text = cleanName;
             cleanLabel.style.display = UIE.DisplayStyle.Flex;
             item.Name.style.visibility = UIE.Visibility.Hidden;
-            nameHost.tooltip = look.Tooltip;
 
             if (button == null)
             {
@@ -1326,7 +1543,6 @@ namespace ArtTools.EnvironmentArt
             }
 
             button.userData = new GroupButtonState { Group = go, View = view, Node = node };
-            button.tooltip = $"Select the {go.transform.childCount} object(s) in this group";
             PaintText(cleanLabel, button, look);
             HeaderRows[row] = (go, cleanLabel, button);
             button.style.display = go.transform.childCount > 0 ? UIE.DisplayStyle.Flex : UIE.DisplayStyle.None;
@@ -1342,8 +1558,7 @@ namespace ArtTools.EnvironmentArt
             if (HierarchyOrganizerTool.TryGetDefaultColor(key, out var color))
                 return color;
 
-            float hue = StableHash(key) % 100 / 100f;
-            return Color.HSVToRGB(hue, 0.65f, 0.72f);
+            return HierarchyOrganizerTool.DefaultPaletteColor(StableHash(key));
         }
 
         internal static Color TextColorFor(Color background)
@@ -1390,6 +1605,7 @@ namespace ArtTools.EnvironmentArt
             public float opacity = 1f;
             public float saturation = 1f;
             public float lightness;
+            public string organizeInside = "";
         }
 
         private static Saved _saved;
@@ -1472,6 +1688,17 @@ namespace ArtTools.EnvironmentArt
         {
             get => Current.treeLines;
             set => Store(ref Current.treeLines, value);
+        }
+
+        internal static string OrganizeInside
+        {
+            get => Current.organizeInside ?? "";
+            set
+            {
+                if (OrganizeInside == value) return;
+                Current.organizeInside = value;
+                Save();
+            }
         }
 
         internal static float BannerOpacity

@@ -104,7 +104,6 @@ namespace ArtTools.EnvironmentArt
                 var holder = target != null ? ResolvePivotHolder(target) : null;
                 if (holder != null) RevertPivot(holder);
             });
-            _revertButton.tooltip = "Restores the model's original pivot.";
             _revertButton.style.marginTop = 6f;
             card.Add(_revertButton);
 
@@ -144,10 +143,7 @@ namespace ArtTools.EnvironmentArt
             _positionLabel.style.marginBottom = 4f;
             _customFields.Add(_positionLabel);
 
-            _snapToggle = new Toggle("Snap to vertex")
-            {
-                tooltip = "Ctrl+Click a point on the model to snap to the nearest vertex.",
-            };
+            _snapToggle = new Toggle("Snap to vertex");
             _snapToggle.RegisterValueChangedCallback(e =>
             {
                 _vertexSnapActive = e.newValue;
@@ -199,7 +195,6 @@ namespace ArtTools.EnvironmentArt
                 _surfaceTarget = Selection.activeGameObject;
                 Refresh();
             });
-            setSurface.tooltip = "Uses the selected object as the reference surface.";
             setSurface.style.width = 120f;
             setSurface.style.marginRight = 4f;
             surfaceRow.Add(setSurface);
@@ -220,7 +215,6 @@ namespace ArtTools.EnvironmentArt
             card.Add(surfaceRow);
 
             _snapButton = FlatButton("", true, SnapSelectedPivotsToSurface);
-            _snapButton.tooltip = "Moves the selected objects to the height of the surface's pivot, keeping X and Z.";
             _snapButton.style.marginTop = 8f;
             card.Add(_snapButton);
 
@@ -363,6 +357,8 @@ namespace ArtTools.EnvironmentArt
         private static Bounds CalculateBounds(GameObject go)
         {
             var renderers = go.GetComponentsInChildren<Renderer>();
+            var meshes = renderers.Where(r => r is MeshRenderer || r is SkinnedMeshRenderer).ToArray();
+            if (meshes.Length > 0) renderers = meshes;
             if (renderers.Length == 0) return new Bounds(go.transform.position, Vector3.zero);
 
             var bounds = renderers[0].bounds;
@@ -376,7 +372,7 @@ namespace ArtTools.EnvironmentArt
             if (_surfaceTarget == null) return new GameObject[0];
 
             var surface = _surfaceTarget.transform;
-            return Selection.gameObjects
+            return Selection.GetFiltered<GameObject>(SelectionMode.TopLevel)
                 .Where(g => g.scene.IsValid()
                             && g != _surfaceTarget
                             && !g.transform.IsChildOf(surface)
@@ -416,13 +412,10 @@ namespace ArtTools.EnvironmentArt
         {
             var existingHolder = ResolvePivotHolder(target);
 
-            if (existingHolder == null
-                && PrefabUtility.IsPartOfPrefabInstance(target)
-                && !PrefabUtility.IsOutermostPrefabInstanceRoot(target))
+            string refusal = existingHolder == null ? RefusalToWrap(target) : null;
+            if (refusal != null)
             {
-                EditorUtility.DisplayDialog("Object Editor",
-                    $"'{target.name}' is inside a prefab. Select the instance root or edit the pivot inside the prefab.",
-                    "OK");
+                EditorUtility.DisplayDialog("Object Editor", refusal, "OK");
                 return;
             }
 
@@ -438,18 +431,31 @@ namespace ArtTools.EnvironmentArt
             Selection.activeGameObject = pivotHolder;
         }
 
+        internal static bool IsPivotHolder(GameObject go)
+        {
+            string tag = go.tag;
+            return tag == PivotHolderTag || tag == LegacyNames.PivotHolderTag;
+        }
+
         private static GameObject ResolvePivotHolder(GameObject go)
         {
-            var tags = InternalEditorUtility.tags;
-            bool current = tags.Contains(PivotHolderTag);
-            bool legacy = tags.Contains(LegacyNames.PivotHolderTag);
-            if (!current && !legacy) return null;
+            if (IsPivotHolder(go)) return go;
 
-            for (var t = go.transform; t != null; t = t.parent)
-            {
-                if (current && t.gameObject.CompareTag(PivotHolderTag)) return t.gameObject;
-                if (legacy && t.gameObject.CompareTag(LegacyNames.PivotHolderTag)) return t.gameObject;
-            }
+            var parent = go.transform.parent;
+            return parent != null && IsPivotHolder(parent.gameObject) ? parent.gameObject : null;
+        }
+
+        private static string RefusalToWrap(GameObject target)
+        {
+            if (PrefabUtility.IsPartOfPrefabInstance(target) && !PrefabUtility.IsOutermostPrefabInstanceRoot(target))
+                return $"'{target.name}' is inside a prefab. Select the instance root or edit the pivot inside the prefab.";
+
+            if (target.name.StartsWith(HierarchyOrganizerTool.HeaderPrefix) || HierarchyOrganizerTool.IsTitle(target.name))
+                return $"'{target.name}' is a Hierarchy Organizer group. Edit the pivot of the objects inside it.";
+
+            if (target.transform.parent == null && HierarchyOrganizerTool.NeedsSceneRoot(target))
+                return $"'{target.name}' uses DontDestroyOnLoad, which only works at the scene root. A new pivot would put it inside a parent.";
+
             return null;
         }
 
