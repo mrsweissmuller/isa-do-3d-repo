@@ -56,6 +56,7 @@ namespace IsaDo3D.EnvironmentArt
             EditorApplication.projectChanged += Refresh;
             FolderColorState.Changed += Refresh;
             IsaDo3DToolState.Changed += Refresh;
+            Undo.undoRedoPerformed += FolderColorState.AfterUndoRedo;
             AssemblyReloadEvents.beforeAssemblyReload += DestroyTextures;
         }
 
@@ -132,28 +133,33 @@ namespace IsaDo3D.EnvironmentArt
             var own = FolderColorState.Find(guid);
             if (own != null && own.badge != "") look.Badge = BadgeIcon(own.badge);
 
-            // Sobe até a primeira pasta que decide a cor
-            var folder = path;
-            var entry = own;
-            while (true)
-            {
-                if (entry != null && entry.color != FolderColorState.Inherit)
-                {
-                    look.HasColor = entry.color != FolderColorState.NoColor
-                                    && ColorUtility.TryParseHtmlString(entry.color, out look.Color);
-                    break;
-                }
-
-                int slash = folder.LastIndexOf('/');
-                if (slash < 0) break;
-                folder = folder.Substring(0, slash);
-                entry = FolderColorState.Find(AssetDatabase.AssetPathToGUID(folder));
-            }
+            var deciding = Deciding(path, out _);
+            if (deciding != null)
+                look.HasColor = deciding.color != FolderColorState.NoColor
+                                && ColorUtility.TryParseHtmlString(deciding.color, out look.Color);
 
             // Vem o ícone de pasta vazia quando ela está vazia
             if (look.HasColor) look.Icon = AssetDatabase.GetCachedIcon(path) as Texture2D;
             return look;
         }
+
+        // Sobe a partir da pasta dada, ela inclusa, até a primeira que decide a cor. Null quando nenhuma decide
+        internal static FolderColorState.Entry Deciding(string path, out string folder)
+        {
+            folder = path;
+            while (true)
+            {
+                var entry = FolderColorState.Find(AssetDatabase.AssetPathToGUID(folder));
+                if (entry != null && entry.color != FolderColorState.Inherit) return entry;
+
+                int slash = folder.LastIndexOf('/');
+                if (slash < 0) return null;
+                folder = folder.Substring(0, slash);
+            }
+        }
+
+        // Nome da cor quando é uma das que já vêm, senão o próprio código
+        internal static string ColorName(string hex) => Presets.FirstOrDefault(p => p.Hex == hex).Name ?? hex;
 
         // Feito fora do OnGUI, porque trocar o alvo de desenho no meio do repaint bagunça a janela
         private static void Schedule(Texture2D icon)
@@ -248,7 +254,7 @@ namespace IsaDo3D.EnvironmentArt
             return icon;
         }
 
-        private static string[] SelectedFolders() =>
+        internal static string[] SelectedFolders() =>
             Selection.assetGUIDs.Where(guid => AssetDatabase.IsValidFolder(AssetDatabase.GUIDToAssetPath(guid))).ToArray();
 
         [MenuItem(Menu, true)]

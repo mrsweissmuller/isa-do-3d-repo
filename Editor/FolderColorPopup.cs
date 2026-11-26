@@ -11,8 +11,8 @@ using static IsaDo3D.EnvironmentArt.IsaDo3DStyles;
 namespace IsaDo3D.EnvironmentArt
 {
     // Janela pequena que abre no meio da Unity pelo clique direito na pasta: cores pra clicar, cor livre, selos. O
-    // que se escolhe aparece na hora nas pastas que estavam selecionadas quando ela abriu, mas só fica com o Apply;
-    // fechar de outro jeito desfaz. É janela de verdade (ShowUtility) pra quem move e fecha ser o sistema
+    // que se escolhe vale na hora e fica, o Undo é que desfaz. Enquanto está aberta ela acompanha a pasta
+    // selecionada na janela Project. É janela de verdade (ShowUtility) pra quem move e fecha ser o sistema
     internal class FolderColorPopup : EditorWindow
     {
         private const float Width = 340f;
@@ -20,7 +20,7 @@ namespace IsaDo3D.EnvironmentArt
         private const float BadgeSize = 30f;
 
         // Altura de antes do conteúdo ser medido, perto da final pra janela não pular ao abrir
-        private const float OpenHeight = 470f;
+        private const float OpenHeight = 438f;
 
         private static readonly string[] ModeNames = { "Same as parent", "No color" };
         private static readonly string[] ModeColors = { FolderColorState.Inherit, FolderColorState.NoColor };
@@ -29,9 +29,8 @@ namespace IsaDo3D.EnvironmentArt
         [NonSerialized] private string[] _guids;
         private VisualElement _page;
         private VisualElement _body;
-        private bool _applied;
 
-        // Como as pastas estavam antes de cada mudança feita aqui. O primeiro é o estado de quando abriu
+        // Como as pastas estavam antes de cada mudança feita aqui, pro Undo. Pode ter pasta que já não é a da janela
         private readonly List<Dictionary<string, (string Color, string Badge)>> _history =
             new List<Dictionary<string, (string Color, string Badge)>>();
         private Button _undo;
@@ -39,7 +38,7 @@ namespace IsaDo3D.EnvironmentArt
 
         internal static void Open(string[] guids)
         {
-            // Uma por vez; a que estava aberta fecha sem aplicar
+            // Uma por vez
             foreach (var open in Resources.FindObjectsOfTypeAll<FolderColorPopup>()) open.Close();
 
             var popup = CreateInstance<FolderColorPopup>();
@@ -53,10 +52,34 @@ namespace IsaDo3D.EnvironmentArt
             popup.Focus();
         }
 
-        private void OnDestroy()
+        private void OnEnable() => Undo.undoRedoPerformed += AfterUndoRedo;
+
+        private void OnDisable() => Undo.undoRedoPerformed -= AfterUndoRedo;
+
+        private void OnDestroy() => FolderColorState.Flush();
+
+        // O Ctrl+Z pode ter mudado a pasta que está na janela
+        private void AfterUndoRedo()
         {
-            if (_guids != null && !_applied && _history.Count > 0) Restore(_history[0]);
+            if (_guids != null && _body != null) Later();
+        }
+
+        // Umas 10 vezes por segundo. Não dá pra esperar o Selection.selectionChanged: clicar numa pasta da árvore
+        // da esquerda (duas colunas) não muda a seleção nem avisa, só faz o Selection.assetGUIDs devolver essa pasta
+        private void OnInspectorUpdate() => FollowSelection();
+
+        // Clicar em outra pasta com a janela aberta passa a editar essa. Seleção sem pasta nenhuma não muda nada
+        private void FollowSelection()
+        {
+            if (_guids == null || _body == null) return;
+
+            var folders = FolderColors.SelectedFolders();
+            if (folders.Length == 0 || folders.SequenceEqual(_guids)) return;
+
             FolderColorState.Flush();
+            _guids = folders;
+            _picking = false;
+            Later();
         }
 
         // As peças de visual (cabeçalho, cartão, botão, cores) ficam no IsaDo3DStyles, iguais pra todas as janelas
@@ -114,18 +137,9 @@ namespace IsaDo3D.EnvironmentArt
             _body.Add(BuildColorCard(color));
             _body.Add(BuildBadgeCard(badge));
 
-            var apply = FlatButton("Apply", true, () =>
-            {
-                _applied = true;
-                Close();
-            });
-            apply.style.height = 30f;
-            apply.style.marginTop = 2f;
-            _body.Add(apply);
-
-            var hint = Note("Closing without Apply discards the changes.");
+            var hint = Note("Changes are saved right away, Ctrl+Z takes them back. Click another folder to edit it.");
             hint.style.unityTextAlign = TextAnchor.MiddleCenter;
-            hint.style.marginTop = 6f;
+            hint.style.marginTop = 2f;
             _body.Add(hint);
         }
 
@@ -137,6 +151,9 @@ namespace IsaDo3D.EnvironmentArt
             var paths = _guids.Select(AssetDatabase.GUIDToAssetPath).ToArray();
             var target = Note(paths.Length == 1 ? Path.GetFileName(paths[0]) : $"{paths.Length} folders");
             target.tooltip = string.Join("\n", paths);
+            target.style.fontSize = 12f;
+            target.style.color = TextColor;
+            target.style.unityFontStyleAndWeight = FontStyle.Bold;
             target.style.flexGrow = 1f;
             target.style.flexShrink = 1f;
             target.style.whiteSpace = WhiteSpace.NoWrap;
@@ -144,7 +161,7 @@ namespace IsaDo3D.EnvironmentArt
             row.Add(target);
 
             _undo = LinkButton("Undo", UndoLast);
-            _undo.tooltip = "Takes back the last change made in this window.";
+            _undo.tooltip = "Takes back the last change made in this window, even on a folder edited before this one. Ctrl+Z works too.";
             _undo.SetEnabled(_history.Count > 0);
             row.Add(_undo);
             return row;
@@ -194,7 +211,56 @@ namespace IsaDo3D.EnvironmentArt
             modes.style.marginTop = 10f;
             modes.Select(mode);
             card.Add(modes);
+
+            if (color == FolderColorState.Inherit)
+            {
+                var source = Note(InheritedFrom(AssetDatabase.GUIDToAssetPath(_guids[0])));
+                source.style.marginTop = 8f;
+                card.Add(source);
+            }
+
+            var inside = FolderColorState.ColoredInside(_guids);
+            if (inside.Count > 0) card.Add(BuildResetRow(inside));
             return card;
+        }
+
+        // De onde vem a cor de uma pasta que está em Same as parent
+        private static string InheritedFrom(string path)
+        {
+            int slash = path.LastIndexOf('/');
+            var deciding = slash < 0 ? null : FolderColors.Deciding(path.Substring(0, slash), out path);
+            if (deciding == null) return "No folder above has a color, so this one stays plain.";
+
+            string folder = Path.GetFileName(path);
+            return deciding.color == FolderColorState.NoColor
+                ? $"Plain, because {folder} is set to No color."
+                : $"Uses {FolderColors.ColorName(deciding.color)}, from {folder}.";
+        }
+
+        // Só aparece quando tem pasta de dentro com cor própria
+        private VisualElement BuildResetRow(List<string> inside)
+        {
+            var row = Row();
+            row.style.marginTop = 10f;
+
+            var count = Note(inside.Count == 1 ? "1 folder inside has its own color." : $"{inside.Count} folders inside have their own color.");
+            count.tooltip = string.Join("\n", inside.Select(AssetDatabase.GUIDToAssetPath));
+            count.style.flexGrow = 1f;
+            count.style.flexShrink = 1f;
+            count.style.marginRight = 8f;
+            row.Add(count);
+
+            var reset = FlatButton("Reset subfolders", false, () =>
+            {
+                Remember(inside);
+                _picking = false;
+                FolderColorState.Edit(inside, entry => entry.color = FolderColorState.Inherit);
+                Later();
+            });
+            reset.tooltip = "Sets every folder inside back to Same as parent. Badges stay.";
+            Padding(reset, 0f, 10f);
+            row.Add(reset);
+            return row;
         }
 
         private VisualElement BuildBadgeCard(string badge)
@@ -215,22 +281,22 @@ namespace IsaDo3D.EnvironmentArt
         // Sem save é o seletor de cor arrastando, e o arrasto inteiro conta como uma mudança só
         private void SetColor(string color, bool save)
         {
-            if (save || !_picking) Remember();
+            if (save || !_picking) Remember(_guids);
             _picking = !save;
             FolderColorState.Edit(_guids, entry => entry.color = color, save);
         }
 
         private void SetBadge(string badge)
         {
-            Remember();
+            Remember(_guids);
             _picking = false;
             FolderColorState.Edit(_guids, entry => entry.badge = badge);
         }
 
-        private void Remember()
+        private void Remember(IEnumerable<string> guids)
         {
-            var before = new Dictionary<string, (string Color, string Badge)>(_guids.Length);
-            foreach (var guid in _guids)
+            var before = new Dictionary<string, (string Color, string Badge)>();
+            foreach (var guid in guids)
             {
                 var entry = FolderColorState.Find(guid);
                 before[guid] = entry != null ? (entry.color, entry.badge) : (FolderColorState.Inherit, "");
@@ -253,7 +319,7 @@ namespace IsaDo3D.EnvironmentArt
 
         private void Restore(Dictionary<string, (string Color, string Badge)> before)
         {
-            FolderColorState.Edit(_guids, entry =>
+            FolderColorState.Edit(before.Keys, entry =>
             {
                 entry.color = before[entry.guid].Color;
                 entry.badge = before[entry.guid].Badge;

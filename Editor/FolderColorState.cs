@@ -26,8 +26,15 @@ namespace IsaDo3D.EnvironmentArt
         // Cores que a pessoa guardou, além das que já vêm na janela
         [SerializeField] private List<string> _palette = new List<string>();
 
+        // Sobe a cada mudança. O Ctrl+Z da Unity traz o número antigo de volta, e é por ele que se sabe que o
+        // undo mexeu aqui e não em outra coisa
+        [SerializeField] private int _revision;
+        [NonSerialized] private int _seenRevision;
+
         private Dictionary<string, Entry> _byGuid;
         private bool _unsaved;
+
+        private void OnEnable() => _seenRevision = _revision;
 
         internal static IReadOnlyList<string> Palette => instance._palette;
 
@@ -63,6 +70,12 @@ namespace IsaDo3D.EnvironmentArt
         internal static void Edit(IEnumerable<string> guids, Action<Entry> change, bool save = true)
         {
             var state = instance;
+
+            // Entra no Ctrl+Z da Unity. Só este objeto é gravado, a cena não entra
+            Undo.RecordObject(state, "Folder Color");
+            state._revision++;
+            state._seenRevision = state._revision;
+
             var map = Map();
             foreach (var guid in guids)
             {
@@ -83,6 +96,36 @@ namespace IsaDo3D.EnvironmentArt
             if (save) state.Save(true);
 
             Changed?.Invoke();
+        }
+
+        // A Unity chama em todo Ctrl+Z e Ctrl+Y, quase sempre sem nada a ver com as pastas
+        internal static void AfterUndoRedo()
+        {
+            var state = instance;
+            if (state._revision == state._seenRevision) return;
+
+            state._seenRevision = state._revision;
+            state._byGuid = null;
+            state._unsaved = false;
+            state.Save(true);
+            Changed?.Invoke();
+        }
+
+        // Pastas com cor própria dentro das pastas dadas, sem contar elas mesmas
+        internal static List<string> ColoredInside(string[] guids)
+        {
+            var roots = new List<string>(guids.Length);
+            foreach (var guid in guids) roots.Add(AssetDatabase.GUIDToAssetPath(guid) + "/");
+
+            var inside = new List<string>();
+            foreach (var entry in instance._entries)
+            {
+                if (entry.color == Inherit || Array.IndexOf(guids, entry.guid) >= 0) continue;
+
+                var path = AssetDatabase.GUIDToAssetPath(entry.guid);
+                if (roots.Exists(root => path.StartsWith(root, StringComparison.Ordinal))) inside.Add(entry.guid);
+            }
+            return inside;
         }
 
         private static Dictionary<string, Entry> Map()
