@@ -31,11 +31,6 @@ namespace IsaDo3D.EnvironmentArt
             ("shader", "Shader"), ("star", "Star"),
         };
 
-        // Menu de contexto não diz onde o mouse estava, então fica anotado o último clique direito num item
-        private const double ClickMemorySeconds = 120;
-        private static Vector2 _lastRightClick;
-        private static double _lastRightClickTime = double.MinValue;
-
         private struct Look
         {
             public bool HasColor;
@@ -75,13 +70,7 @@ namespace IsaDo3D.EnvironmentArt
             // Erro que sai daqui deixa a janela Project inteira em branco, então nenhum escapa
             try
             {
-                var current = Event.current;
-                if (current.rawType == EventType.MouseDown && current.button == 1)
-                {
-                    _lastRightClick = GUIUtility.GUIToScreenPoint(current.mousePosition);
-                    _lastRightClickTime = EditorApplication.timeSinceStartup;
-                }
-                if (current.type == EventType.Repaint) Draw(guid, rect);
+                if (Event.current.type == EventType.Repaint) Draw(guid, rect);
             }
             catch (Exception e)
             {
@@ -266,17 +255,12 @@ namespace IsaDo3D.EnvironmentArt
         private static bool CanOpen() => IsaDo3DToolState.IsOn(ToolIds.FolderColors) && SelectedFolders().Length > 0;
 
         [MenuItem(Menu, false, 2100)]
-        private static void OpenAtMouse()
-        {
-            // Aberto pelo menu Assets de cima não tem clique direito recente
-            bool recent = EditorApplication.timeSinceStartup - _lastRightClickTime <= ClickMemorySeconds;
-            FolderColorPopup.Open(SelectedFolders(), recent ? _lastRightClick : FocusedCenter());
-        }
+        private static void OpenFromProject() => FolderColorPopup.Open(SelectedFolders());
 
         [MenuItem(ToolsMenu, true)]
         private static bool IsOn() => IsaDo3DToolState.IsOn(ToolIds.FolderColors);
 
-        // Pelo menu Art Tools e pelo botão Open da janela de Settings, onde não tem mouse em cima de pasta
+        // Pelo menu Art Tools e pelo botão Open da janela de Settings, onde pode não ter pasta selecionada
         [MenuItem(ToolsMenu, false, 3)]
         public static void Open()
         {
@@ -286,15 +270,7 @@ namespace IsaDo3D.EnvironmentArt
                 EditorUtility.DisplayDialog("Folder Color", "Select one or more folders in the Project window first.", "OK");
                 return;
             }
-            FolderColorPopup.Open(folders, FocusedCenter());
-        }
-
-        private static Vector2 FocusedCenter()
-        {
-            var host = EditorWindow.focusedWindow != null
-                ? EditorWindow.focusedWindow.position
-                : EditorGUIUtility.GetMainWindowPosition();
-            return host.center - new Vector2(124f, 110f);
+            FolderColorPopup.Open(folders);
         }
     }
 }

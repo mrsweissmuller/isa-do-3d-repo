@@ -73,11 +73,17 @@ namespace IsaDo3D.EnvironmentArt
         private class AutoRow
         {
             public GameObject Object;
+            public VisualElement Row;
             public Toggle Check;
             public DropdownPill Destination;
         }
 
         private readonly List<AutoRow> _autoRows = new List<AutoRow>();
+        private VisualElement _autoBatch;
+
+        // De onde parte o Shift+clique, nas caixas e nos nomes
+        private int _autoCheckAnchor = -1;
+        private int _autoNameAnchor = -1;
         private Label _autoNote;
         private VisualElement _autoPreview;
         private VisualElement _autoList;
@@ -126,6 +132,7 @@ namespace IsaDo3D.EnvironmentArt
         private void OnSelectionChange()
         {
             Refresh();
+            RefreshAutoSelection();
         }
 
         private void OnHierarchyChange()
@@ -138,9 +145,17 @@ namespace IsaDo3D.EnvironmentArt
         // As peças de visual (cartão, botão, cores) ficam no IsaDo3DStyles, iguais pra todas as janelas
         private void CreateGUI()
         {
-            minSize = new Vector2(340f, 320f);
+            minSize = new Vector2(MinWidth, MinHeight);
 
-            var page = Page(rootVisualElement);
+            _page = Page(rootVisualElement);
+
+            // Tudo dentro de um elemento só, é a altura dele que a janela copia, igual na janela de Settings
+            var page = new VisualElement();
+            _body = page;
+            page.RegisterCallback<GeometryChangedEvent>(FitHeight);
+            rootVisualElement.UnregisterCallback<GeometryChangedEvent>(FitHeight);
+            rootVisualElement.RegisterCallback<GeometryChangedEvent>(FitHeight);
+            _page.Add(page);
 
             page.Add(Header("Hierarchy Organizer"));
             page.Add(BuildTabs());
@@ -149,6 +164,49 @@ namespace IsaDo3D.EnvironmentArt
             foreach (var tabPage in _pages) page.Add(tabPage);
 
             SelectTab(Mathf.Clamp(_tab, 0, _pages.Length - 1));
+        }
+
+        private const float MinWidth = 340f;
+        private const float MinHeight = 320f;
+        private const float AnySize = 4000f;
+
+        // Teto do que a janela pode ter de borda, pro ajuste de altura nunca crescer sem parar
+        private const float MaxChrome = 60f;
+
+        private VisualElement _page;
+        private VisualElement _body;
+
+        // Solta, a janela fica da altura da aba aberta, até 85% da Unity; passou disso, rola. Só pelo minSize e
+        // maxSize, porque escrever no position joga a janela pro canto da tela. Encaixada num painel ela não
+        // manda na própria altura, então volta a aceitar qualquer tamanho
+        private void FitHeight(GeometryChangedEvent e)
+        {
+            if (docked)
+            {
+                if (Mathf.Abs(minSize.y - maxSize.y) < 1f)
+                {
+                    maxSize = new Vector2(AnySize, AnySize);
+                    minSize = new Vector2(MinWidth, MinHeight);
+                }
+                return;
+            }
+
+            float view = rootVisualElement.layout.height;
+            float content = _body.layout.height + _page.resolvedStyle.paddingTop + _page.resolvedStyle.paddingBottom;
+            if (float.IsNaN(view) || float.IsNaN(content) || view <= 0f || content <= 0f) return;
+
+            content = Mathf.Min(content, EditorGUIUtility.GetMainWindowPosition().height * 0.85f);
+
+            // Travada, a janela tem a altura do minSize, e o que ela mostra a menos que isso é borda
+            bool locked = Mathf.Abs(minSize.y - maxSize.y) < 1f;
+            float height = Mathf.Ceil(locked ? minSize.y + content - view : content);
+            height = Mathf.Clamp(height, content, content + MaxChrome);
+            if (locked && Mathf.Abs(minSize.y - height) < 1f) return;
+
+            // Mínimo acima do máximo antigo trava a janela, então quem cresce sobe o máximo antes
+            if (height > maxSize.y) maxSize = new Vector2(AnySize, height);
+            minSize = new Vector2(MinWidth, height);
+            maxSize = new Vector2(AnySize, height);
         }
 
         private VisualElement BuildTabs()
@@ -284,6 +342,10 @@ namespace IsaDo3D.EnvironmentArt
             _autoPreview = new VisualElement();
             _autoPreview.style.marginTop = 8f;
 
+            _autoBatch = new VisualElement();
+            _autoBatch.style.marginBottom = 6f;
+            _autoPreview.Add(_autoBatch);
+
             var list = new ScrollView(ScrollViewMode.Vertical);
             list.style.maxHeight = 260f;
             list.style.backgroundColor = InsetColor;
@@ -326,6 +388,9 @@ namespace IsaDo3D.EnvironmentArt
         {
             _autoRows.Clear();
             _autoList.Clear();
+            _autoBatch.Clear();
+            _autoCheckAnchor = -1;
+            _autoNameAnchor = -1;
 
             var plan = PlanAutoOrganize();
             var destinations = OrganizeDestinations();
@@ -338,30 +403,43 @@ namespace IsaDo3D.EnvironmentArt
                 return;
             }
 
+            BuildAutoBatch(destinations);
+
             // Com sugestão primeiro, o que não tem regra fica no fim e desmarcado
             foreach (var (go, suggestion) in plan.OrderBy(p => p.Destination == null))
             {
-                var target = go;
+                var entry = new AutoRow { Object = go };
 
                 var row = Row();
                 row.style.height = 22f;
+                Radius(row, 3f);
+                Padding(row, 0f, 2f);
 
                 var check = new Toggle { value = suggestion != null };
                 check.style.marginRight = 4f;
-                check.RegisterValueChangedCallback(_ => UpdateAutoCount());
+
+                // O Toggle da Unity ignora clique com Shift apertado, então esse clique é tratado aqui
+                check.RegisterCallback<PointerDownEvent>(e =>
+                {
+                    if (e.button != 0 || !e.shiftKey) return;
+                    check.SetValueWithoutNotify(!check.value);
+                    OnAutoCheck(entry, check.value, true);
+                    e.StopPropagation();
+                }, TrickleDown.TrickleDown);
+                check.RegisterValueChangedCallback(e => OnAutoCheck(entry, e.newValue, false));
                 row.Add(check);
 
-                var name = new Label(go.name) { tooltip = "Click to select this object." };
+                var name = new Label(go.name)
+                {
+                    tooltip = "Click to select this object. Shift-click selects up to here, Ctrl-click adds or removes it.",
+                };
                 name.style.flexGrow = 1f;
                 name.style.flexShrink = 1f;
                 name.style.overflow = Overflow.Hidden;
                 name.style.color = suggestion != null ? TextColor : MutedColor;
-                name.AddManipulator(new Clickable(() =>
-                {
-                    if (target == null) return;
-                    Selection.activeGameObject = target;
-                    EditorGUIUtility.PingObject(target);
-                }));
+
+                // Clickable também ignora clique com Shift ou Ctrl, o ClickEvent não
+                name.RegisterCallback<ClickEvent>(e => OnAutoNameClick(entry, e));
                 row.Add(name);
 
                 int index = suggestion != null ? Mathf.Max(0, destinations.IndexOf(suggestion)) : 0;
@@ -370,18 +448,172 @@ namespace IsaDo3D.EnvironmentArt
                 {
                     MenuLabel = DestinationMenuLabel,
                     FieldLabel = DestinationFieldLabel,
+
+                    // Escolher o grupo que a linha já tem ainda serve pra passar ele pras outras selecionadas
+                    AlwaysNotify = true,
                 };
                 destination.style.width = 170f;
                 destination.style.flexShrink = 0f;
 
                 // Escolher um grupo já é querer mover
-                destination.Changed += _ => check.value = true;
+                destination.Changed += value => OnAutoDestination(entry, value);
                 row.Add(destination);
 
-                _autoRows.Add(new AutoRow { Object = go, Check = check, Destination = destination });
+                entry.Row = row;
+                entry.Check = check;
+                entry.Destination = destination;
+                _autoRows.Add(entry);
                 _autoList.Add(row);
             }
 
+            RefreshAutoSelection();
+            UpdateAutoCount();
+        }
+
+        // Em cima da lista: marcar tudo ou nada, e dar o mesmo grupo a todas as linhas marcadas de uma vez
+        private void BuildAutoBatch(List<string> destinations)
+        {
+            var hint = Note("Shift-click a checkbox to mark a range. The range turns blue, and a group picked on one blue row goes to all of them.");
+            hint.style.marginBottom = 4f;
+            _autoBatch.Add(hint);
+
+            var row = Row();
+            row.Add(LinkButton("Mark all", () => MarkAllAuto(true)));
+            row.Add(LinkButton("Mark none", () => MarkAllAuto(false)));
+
+            var spacer = new VisualElement();
+            spacer.style.flexGrow = 1f;
+            row.Add(spacer);
+
+            // O campo fechado mostra sempre o que ele faz, não a última escolha
+            var setMarked = new DropdownPill(destinations, 0)
+            {
+                MenuLabel = DestinationMenuLabel,
+                FieldLabel = _ => "Set marked to…",
+                AlwaysNotify = true,
+                tooltip = "Gives every marked row the group you pick here.",
+            };
+            setMarked.style.width = 170f;
+            setMarked.style.flexShrink = 0f;
+            setMarked.Changed += value =>
+            {
+                foreach (var marked in _autoRows.Where(r => r.Check.value))
+                    marked.Destination.SetValueWithoutNotify(value);
+            };
+            row.Add(setMarked);
+            _autoBatch.Add(row);
+        }
+
+        private void MarkAllAuto(bool value)
+        {
+            foreach (var row in _autoRows) row.Check.SetValueWithoutNotify(value);
+            if (!value) DeselectAuto(_autoRows);
+            UpdateAutoCount();
+        }
+
+        // Linha desmarcada em lote não fica azul: sai da seleção da cena, que é de onde o azul vem
+        private static void DeselectAuto(List<AutoRow> rows)
+        {
+            var leaving = new HashSet<Object>(rows.Where(r => r.Object != null).Select(r => (Object)r.Object));
+            var staying = Selection.objects.Where(o => !leaving.Contains(o)).ToArray();
+            if (staying.Length != Selection.objects.Length) Selection.objects = staying;
+        }
+
+        // Linha selecionada é a do objeto selecionado na cena, então selecionar na Hierarchy também vale
+        private static bool IsAutoSelected(AutoRow row) => row.Object != null && Selection.Contains(row.Object);
+
+        // As outras linhas selecionadas junto com esta; vazio quando ela mesma não está selecionada
+        private List<AutoRow> AutoSelectedWith(AutoRow row)
+        {
+            return IsAutoSelected(row)
+                ? _autoRows.Where(r => r != row && IsAutoSelected(r)).ToList()
+                : new List<AutoRow>();
+        }
+
+        private void RefreshAutoSelection()
+        {
+            var tint = new Color(Accent.r, Accent.g, Accent.b, 0.3f);
+            foreach (var row in _autoRows)
+                row.Row.style.backgroundColor = IsAutoSelected(row) ? tint : Color.clear;
+        }
+
+        private void OnAutoNameClick(AutoRow row, ClickEvent e)
+        {
+            if (row.Object == null || e.button != 0) return;
+
+            int index = _autoRows.IndexOf(row);
+            bool shift = e.shiftKey;
+            bool toggle = e.actionKey;
+
+            if (shift && _autoNameAnchor >= 0 && _autoNameAnchor < _autoRows.Count)
+            {
+                int from = Mathf.Min(_autoNameAnchor, index);
+                int to = Mathf.Max(_autoNameAnchor, index);
+                Selection.objects = _autoRows.Skip(from).Take(to - from + 1)
+                    .Where(r => r.Object != null).Select(r => (Object)r.Object).ToArray();
+                return;
+            }
+
+            if (toggle)
+            {
+                var selected = Selection.objects.ToList();
+                if (!selected.Remove(row.Object)) selected.Add(row.Object);
+                Selection.objects = selected.ToArray();
+            }
+            else
+            {
+                Selection.activeGameObject = row.Object;
+                EditorGUIUtility.PingObject(row.Object);
+            }
+            _autoNameAnchor = index;
+        }
+
+        // Shift+clique marca ou desmarca dali até a última caixa clicada. Sem Shift, numa linha selecionada,
+        // vale pra todas as selecionadas
+        private void OnAutoCheck(AutoRow row, bool value, bool shift)
+        {
+            int index = _autoRows.IndexOf(row);
+
+            if (shift && _autoCheckAnchor >= 0 && _autoCheckAnchor < _autoRows.Count)
+            {
+                int from = Mathf.Min(_autoCheckAnchor, index);
+                int to = Mathf.Max(_autoCheckAnchor, index);
+                for (int i = from; i <= to; i++) _autoRows[i].Check.SetValueWithoutNotify(value);
+
+                // Quem marca um intervalo quer mexer nele junto: as linhas ficam selecionadas, e aí o grupo
+                // escolhido em uma delas vale pra todas
+                var range = _autoRows.Skip(from).Take(to - from + 1).ToList();
+                if (value)
+                    Selection.objects = range.Where(r => r.Object != null).Select(r => (Object)r.Object).ToArray();
+                else
+                    DeselectAuto(range);
+            }
+            else
+            {
+                var others = AutoSelectedWith(row);
+                foreach (var other in others) other.Check.SetValueWithoutNotify(value);
+
+                // Desmarcou o grupo selecionado inteiro, então ele deixa de estar selecionado
+                if (!value && others.Count > 0)
+                {
+                    others.Add(row);
+                    DeselectAuto(others);
+                }
+            }
+
+            _autoCheckAnchor = index;
+            UpdateAutoCount();
+        }
+
+        private void OnAutoDestination(AutoRow row, string value)
+        {
+            foreach (var other in AutoSelectedWith(row))
+            {
+                other.Destination.SetValueWithoutNotify(value);
+                other.Check.SetValueWithoutNotify(true);
+            }
+
+            row.Check.SetValueWithoutNotify(true);
             UpdateAutoCount();
         }
 

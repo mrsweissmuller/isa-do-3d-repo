@@ -307,6 +307,9 @@ namespace IsaDo3D.EnvironmentArt
 
         public event Action<string> Changed;
 
+        // Avisa também quando a pessoa escolhe a opção que já estava, pra quem aplica a escolha em outras linhas
+        public bool AlwaysNotify;
+
         // Texto de cada opção no menu
         public Func<string, string> MenuLabel
         {
@@ -376,7 +379,7 @@ namespace IsaDo3D.EnvironmentArt
                 string picked = choice;
                 menu.AddItem(_menuLabel != null ? _menuLabel(choice) : choice, choice == value, () =>
                 {
-                    if (picked == value) return;
+                    if (picked == value && !AlwaysNotify) return;
                     SetValueWithoutNotify(picked);
                     Changed?.Invoke(picked);
                 });
